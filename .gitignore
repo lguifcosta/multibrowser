@@ -1,0 +1,27 @@
+# Wails
+build/bin
+build/windows/installer/wails_tools.nsh
+build/windows/installer/project.nsi
+frontend/dist
+frontend/node_modules
+wailsjs/
+
+# Go
+bin
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Javascript
+node_modules/
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

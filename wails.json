@@ -1,0 +1,15 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "multibrowser",
+  "outputfilename": "multibrowser",
+  "frontend:dir": "frontend",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "tags": "webkit2_41",
+  "author": {
+    "name": "lguifcosta",
+    "email": "lgcosta.lgfc@gmail.com"
+  }
+}
