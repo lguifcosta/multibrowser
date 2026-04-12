@@ -1,19 +1,68 @@
-# README
+# MultiBrowser
 
-## About
+Gerenciador de perfis isolados de Chromium para desktop (Linux/Windows).
 
-This is the official Wails Vanilla template.
+## Funcionalidades
 
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+- **Isolamento Total**: Cada perfil possui seu próprio diretório de dados (`--user-data-dir`).
+- **Execução Simultânea**: Abra múltiplos perfis ao mesmo tempo com controle de instâncias.
+- **Sistema de Lock**: Proteção contra abertura dupla do mesmo perfil usando detecção de PID.
+- **Backup e Importação**: Exporte perfis em `.tar.gz` com opção de criptografia AES-GCM.
+- **Limpeza de Cache**: Libere espaço em disco removendo caches desnecessários do Chromium.
+- **Interface Moderna**: UI escura e intuitiva construída com Wails e Vite.
 
-## Live Development
+## Requisitos
 
-To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
-server that will provide very fast hot reload of your frontend changes. If you want to develop in a browser
-and have access to your Go methods, there is also a dev server that runs on http://localhost:34115. Connect
-to this in your browser, and you can call your Go code from devtools.
+- **Go** 1.22+
+- **Wails v2**
+- **NPM** (para o frontend)
+- **Chromium** ou **Google Chrome** instalado no sistema.
+- **Linux**: `webkit2gtk-4.0` ou `webkit2gtk-4.1`.
 
-## Building
+## Desenvolvimento
 
-To build a redistributable, production mode package, use `wails build`.
+Para rodar em modo de desenvolvimento:
+
+```bash
+wails dev
+```
+
+## Build
+
+Para gerar o binário de produção:
+
+### Linux
+
+Se o seu sistema usa `webkit2gtk-4.1` (como Ubuntu 24.04+):
+
+```bash
+wails build -tags "webkit2_41"
+```
+
+Caso contrário:
+
+```bash
+wails build
+```
+
+### Windows
+
+```bash
+wails build
+```
+
+## Testes
+
+```bash
+go test ./...
+```
+
+## Estrutura do Projeto
+
+- `app.go`: Ponto de entrada e integração dos serviços.
+- `internal/profile`: Gerenciamento de metadados e diretórios de perfis.
+- `internal/process`: Orquestração de processos do Chromium.
+- `internal/lock`: Mecanismo de lock baseado em PID.
+- `internal/backup`: Serviço de exportação/importação com criptografia.
+- `internal/cache`: Limpeza seletiva de arquivos temporários.
+- `frontend/`: Interface do usuário (Vite + Vanilla JS).
