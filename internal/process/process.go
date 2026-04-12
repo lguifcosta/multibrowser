@@ -59,9 +59,7 @@ func (m *Manager) Launch(profileID string) (int, error) {
 		"--no-default-browser-check",
 	)
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	setSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("failed to start chromium: %w", err)
