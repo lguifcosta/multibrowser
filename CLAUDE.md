@@ -1,220 +1,58 @@
-# MultiBrowser — Workflow & Convenções (Alinhado ao MVP Desktop)
+# MultiBrowser — Guia de Desenvolvimento & Arquitetura
 
-## Workflow de Verificação Obrigatório (Anti-Regressão)
+Este documento serve como a fonte da verdade para o desenvolvimento do MultiBrowser. Ele orquestra o comportamento esperado de todas as partes do sistema.
 
-Antes de finalizar qualquer tarefa:
+## 🏗️ Estrutura do Projeto
 
-1. **Testes obrigatórios (1-to-1)**
+O projeto é dividido em módulos dentro de `internal/`, cada um com seu próprio arquivo `CLAUDE.md` detalhado:
 
-   * Toda feature ou bugfix deve ter teste correspondente (Go).
-   * Foco: filesystem, locks, processos, backup/restore, criptografia.
+- **[internal/profile/](./internal/profile/CLAUDE.md)**: Gerenciamento de metadados e diretórios de perfis.
+- **[internal/lock/](./internal/lock/CLAUDE.md)**: Sistema de lock baseado em PID para evitar múltiplas instâncias.
+- **[internal/process/](./internal/process/CLAUDE.md)**: Orquestração de processos Chromium (Spawn/Kill).
+- **[internal/backup/](./internal/backup/CLAUDE.md)**: Exportação/Importação de perfis com criptografia AES.
+- **[internal/cache/](./internal/cache/CLAUDE.md)**: Limpeza seletiva de arquivos temporários do navegador.
+- **[internal/logger/](./internal/logger/)**: Registro de eventos INFO e ERROR em arquivo local.
 
-2. **Validação de Backend**
+## 🚀 Comandos Essenciais
 
-   ```bash
-   go test ./...
-   ```
-
-   Garantir integridade de:
-
-   * locks (.lock + PID)
-   * criação/remoção de perfis
-   * backup/restore
-   * limpeza de cache
-
-3. **Verificação de Execução Real**
-   Validar manualmente ou via teste:
-
-   * não abre perfil com `.lock` ativo
-   * processo Chromium inicia corretamente
-   * processo é finalizado corretamente
-   * lock órfão é limpo
-
-4. **Validação de Build Desktop**
-
-   ```bash
-   wails build
-   ```
-
-   Garantir:
-
-   * build sem erro
-   * bindings Go ↔ UI funcionando
-
-5. **Prova de Integridade (regras críticas)**
-
-   * 1 perfil = 1 instância
-   * backup NÃO ocorre com browser aberto
-   * cache cleaning NÃO ocorre com browser aberto
-   * import sempre gera novo ID
-
-6. **Documentação**
-
-   * Atualizar este arquivo e/ou IDEA.md
-   * Manter coerência com regras de negócio
-
----
-
-## Comandos Úteis
-
+### Desenvolvimento & Build
 ```bash
-# Desenvolvimento
+# Rodar em modo dev (Hot Reload)
 wails dev
-go mod tidy
 
-# Testes
-go test ./...
+# Build para Linux (com WebKitGTK 4.1)
+wails build -tags "webkit2_41"
 
-# Build
+# Build para Windows
 wails build
 ```
 
----
+### Testes & Qualidade
+```bash
+# Rodar todos os testes de backend
+go test ./...
 
-## Pilares do Projeto
+# Sincronizar branch privada com a pública (main)
+bash ./scripts/sync_public.sh
+```
 
-* **Isolamento por Diretório**
+## 📜 Regras de Ouro (Anti-Regressão)
 
-  * Cada perfil usa `user-data-dir` exclusivo
-  * Sem compartilhamento simultâneo
+1. **Um Perfil = Uma Instância**: Nunca permita que dois processos acessem o mesmo `--user-data-dir` simultaneamente. Use o `LockManager`.
+2. **Segurança nos Backups**: Backups criptografados nunca devem ter a senha salva em texto claro. Sempre solicite no ato da operação.
+3. **Limpeza Segura**: Cache cleaning e Backup devem ser bloqueados se o perfil estiver em execução.
+4. **Isolamento de SO**: Toda lógica que dependa do sistema operacional (caminhos de arquivo, atributos de processo) deve ser isolada em arquivos `_unix.go` ou `_windows.go`.
+5. **IDs Únicos**: Ao importar um perfil, sempre gere um novo UUID para evitar conflitos de diretórios.
 
-* **Gestão de Processos**
+## 🛠️ Convenções de Código
 
-  * Spawn via Go (`exec.Command`)
-  * Controle via PID
-  * Lock obrigatório com `.lock`
+- **Go**: Use `internal/` para lógica de negócio. Use `app.go` apenas para expor métodos ao Wails (bindings).
+- **Frontend**: Localizado em `frontend/src/`. Use Vanilla JS e CSS puro para manter o binário leve.
+- **Logs**: Localizados em `~/.multibrowser/app.log`. Sempre logue erros críticos e eventos de ciclo de vida de processos.
 
-* **Persistência**
-
-  * Baseada em filesystem
-  * Metadata em JSON (MVP)
-
-* **Segurança**
-
-  * Criptografia AES para backups
-  * Nunca persistir senha
-  * Sempre solicitar senha no uso
-
-* **Performance**
-
-  * Sem Docker
-  * Execução direta do Chromium
-  * Cache cleaning seletivo
-
----
-
-## Convenções de Código
-
-### Go
-
-* Separar responsabilidades:
-
-  * `ProfileManager`
-  * `ProcessManager`
-  * `BackupService`
-  * `LockManager`
-
-* Tratar TODOS erros de:
-
-  * filesystem
-  * processos
-  * compressão/criptografia
-
-* Nunca assumir estado válido:
-
-  * sempre validar existência de diretórios
-  * sempre validar PID
-
----
-
-### Locks
-
-* Arquivo: `.lock`
-* Conteúdo: PID
-* Regras:
-
-  * criar ao iniciar
-  * remover ao encerrar
-  * se PID não existir → remover automaticamente
-
----
-
-### Processos
-
-* Sempre iniciar com:
-
-  * `--user-data-dir`
-* Nunca reutilizar diretório ativo
-* Sempre registrar PID
-
----
-
-### Backup
-
-* Formato: `.tar.gz`
-* Regras:
-
-  * bloquear se profile estiver rodando
-  * opção de criptografia AES
-  * excluir cache opcionalmente
-
----
-
-### Cache Cleaning
-
-Remover apenas:
-
-* `Cache/`
-* `Code Cache/`
-* `GPUCache/`
-* `Crashpad/`
-
-Regra:
-
-* nunca executar com browser aberto
-
----
-
-## Anti-Patterns (PROIBIDO)
-
-* Abrir mesmo profile duas vezes
-* Backup com profile em execução
-* Sincronização em tempo real de profiles
-* Uso de Docker no desktop
-* Compartilhamento simultâneo de profile
-
----
-
-## Definição de Pronto (Definition of Done)
-
-Uma task só está concluída se:
-
-* testes passam (`go test ./...`)
-* build funciona (`wails build`)
-* comportamento real validado (processo + lock + filesystem)
-* nenhuma regra de negócio foi violada
-* documentação atualizada
-
----
-
-## Prioridade de Desenvolvimento
-
-1. Core (filesystem + metadata)
-2. Gestão de processos
-3. Lock robusto
-4. Backup/restore
-5. Criptografia
-6. Cache cleaning
-7. UI
-
----
-
-## Objetivo Técnico
-
-Manter o sistema:
-
-* determinístico (sem estados ocultos)
-* resiliente a crash
-* sem corrupção de dados
-* simples de portar (Linux → Windows)
-
+## ✅ Definição de Pronto (DoD)
+Uma tarefa só está completa quando:
+- Os testes em `go test ./...` passam.
+- O build (`wails build`) não apresenta erros.
+- A documentação em `CLAUDE.md` (root ou módulo) foi atualizada se necessário.
+- O script de sincronia foi rodado para atualizar a branch pública.
