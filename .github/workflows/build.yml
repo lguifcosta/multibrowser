@@ -1,0 +1,108 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-latest
+            artifact_name: multibrowser-linux
+          - platform: windows
+            os: windows-latest
+            artifact_name: multibrowser-windows.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Linux Dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt update
+          sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
+
+      - name: Install Wails
+        shell: bash
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build Application
+        shell: bash
+        run: |
+          # Ensure wails is in PATH
+          export PATH=$PATH:$(go env GOPATH)/bin
+          if [ "${{ matrix.platform }}" == "linux" ]; then
+            wails build -tags "webkit2_41"
+          else
+            wails build
+          fi
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            build/bin/multibrowser
+            build/bin/multibrowser.exe
+
+  appimage:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Linux Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: multibrowser-linux
+          path: build/bin
+
+      - name: Build AppImage
+        run: |
+          chmod +x build/bin/multibrowser
+          
+          # Use linuxdeploy to package
+          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+          mkdir -p AppDir/usr/bin
+          cp build/bin/multibrowser AppDir/usr/bin/multibrowser
+          
+          # Icon from build folder
+          cp build/appicon.png AppDir/multibrowser.png
+
+          echo "[Desktop Entry]
+Name=MultiBrowser
+Exec=multibrowser
+Icon=multibrowser
+Type=Application
+Categories=Utility;
+Terminal=false" > AppDir/multibrowser.desktop
+
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: MultiBrowser-AppImage
+          path: "*.AppImage"
