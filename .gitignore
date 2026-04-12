@@ -5,6 +5,11 @@ build/windows/installer/project.nsi
 frontend/dist
 frontend/node_modules
 
+# Build Artifacts
+AppDir/
+dist/
+linuxdeploy-x86_64.AppImage
+
 # Go
 bin
 *.exe

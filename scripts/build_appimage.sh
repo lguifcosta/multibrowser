@@ -45,6 +45,7 @@ if [ ! -f "linuxdeploy-x86_64.AppImage" ]; then
 fi
 
 export APPIMAGE_EXTRACT_AND_RUN=1
+export NO_STRIP=1
 ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
 
 # Create dist if it doesn't exist (for local runs)
