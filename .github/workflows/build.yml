@@ -90,13 +90,7 @@ jobs:
           # Icon from build folder
           cp build/appicon.png AppDir/multibrowser.png
 
-          echo "[Desktop Entry]
-Name=MultiBrowser
-Exec=multibrowser
-Icon=multibrowser
-Type=Application
-Categories=Utility;
-Terminal=false" > AppDir/multibrowser.desktop
+          printf "[Desktop Entry]\nName=MultiBrowser\nExec=multibrowser\nIcon=multibrowser\nType=Application\nCategories=Utility;\nTerminal=false" > AppDir/multibrowser.desktop
 
           export APPIMAGE_EXTRACT_AND_RUN=1
           ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
