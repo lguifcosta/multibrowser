@@ -5,9 +5,14 @@ on:
     tags:
       - "v*"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Necessário para criar a release
 
     steps:
       - name: Checkout
@@ -19,11 +24,13 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+          cache: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
+          cache: false
 
       - name: Install Linux Dependencies
         run: |
@@ -54,9 +61,13 @@ jobs:
           chmod +x scripts/build_appimage.sh
           ./scripts/build_appimage.sh
 
-      - name: Upload AppImage
+      - name: Upload Artifacts to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.AppImage
+          files: |
+            dist/*.AppImage
+            dist/*.tar.gz
+            dist/*.zip
+            build/bin/multibrowser.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
