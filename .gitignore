@@ -4,7 +4,6 @@ build/windows/installer/wails_tools.nsh
 build/windows/installer/project.nsi
 frontend/dist
 frontend/node_modules
-wailsjs/
 
 # Go
 bin
