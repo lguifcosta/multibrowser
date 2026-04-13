@@ -110,23 +110,49 @@ jobs:
           chmod +x artifacts/linux/multibrowser
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage
+          wget -q -O appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
           mkdir -p AppDir/usr/bin
           cp artifacts/linux/multibrowser AppDir/usr/bin/multibrowser
           printf "[Desktop Entry]\nName=MultiBrowser\nExec=multibrowser\nIcon=multibrowser\nType=Application\nCategories=Utility;\nTerminal=false\n" > multibrowser.desktop
           cp build/appicon.png multibrowser.png
+
+          # Bundle WebKitGTK helper processes
+          WEBKIT_DIR=$(dirname $(dpkg -L libwebkit2gtk-4.1-0 2>/dev/null | grep WebKitNetworkProcess) 2>/dev/null || echo "/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1")
+          mkdir -p AppDir/usr/lib/webkit2gtk-4.1
+          for proc in WebKitNetworkProcess WebKitWebProcess; do
+            if [ -f "$WEBKIT_DIR/$proc" ]; then
+              cp "$WEBKIT_DIR/$proc" AppDir/usr/lib/webkit2gtk-4.1/
+            fi
+          done
+
+          # Step 1: linuxdeploy to bundle shared libraries (no --output)
           export APPIMAGE_EXTRACT_AND_RUN=1
           export NO_STRIP=1
           ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --executable artifacts/linux/multibrowser \
             --desktop-file multibrowser.desktop \
-            --icon-file multibrowser.png \
-            --output appimage
+            --icon-file multibrowser.png
+
+          # Step 2: Deploy WebKit helper libraries
+          for proc in AppDir/usr/lib/webkit2gtk-4.1/*; do
+            [ -f "$proc" ] && ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable "$proc" 2>/dev/null || true
+          done
+
+          # Step 3: Replace AppRun symlink with custom script
+          rm -f AppDir/AppRun
+          printf '#!/bin/bash\nif [ -n "$APPIMAGE" ] && [ -n "$APPDIR" ]; then\n    HERE="$APPDIR"\nelse\n    HERE="$(cd "$(dirname "$0")" && pwd)"\nfi\nexport LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"\nexport WEBKIT_EXEC_PATH="${HERE}/usr/lib/webkit2gtk-4.1"\nexec "${HERE}/usr/bin/multibrowser" "$@"\n' > AppDir/AppRun
+          chmod +x AppDir/AppRun
+
+          # Step 4: Generate AppImage
+          ARCH=x86_64 ./appimagetool AppDir
 
       - name: Prepare Release Assets
         run: |
           mkdir -p release
-          find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy*' -exec cp {} release/MultiBrowser-linux-x86_64.AppImage \;
+          find . -maxdepth 1 -name 'MultiBrowser*.AppImage' -exec cp {} release/MultiBrowser-linux-x86_64.AppImage \;
           cp artifacts/linux/multibrowser release/multibrowser-linux-amd64
           cp artifacts/windows/multibrowser.exe release/multibrowser-windows-amd64.exe
 
