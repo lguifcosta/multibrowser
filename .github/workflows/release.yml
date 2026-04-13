@@ -121,7 +121,7 @@ jobs:
       - name: Prepare Release Assets
         run: |
           mkdir -p release
-          cp *.AppImage release/MultiBrowser-linux-x86_64.AppImage
+          find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy*' -exec cp {} release/MultiBrowser-linux-x86_64.AppImage \;
           cp artifacts/linux/multibrowser release/multibrowser-linux-amd64
           cp artifacts/windows/multibrowser.exe release/multibrowser-windows-amd64.exe
 
