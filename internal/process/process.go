@@ -6,42 +6,80 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"syscall"
 
+	"multibrowser/internal/config"
 	"multibrowser/internal/lock"
 	"multibrowser/internal/logger"
 	"multibrowser/internal/profile"
 )
 
+type Browser struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
 type Manager struct {
 	profileManager *profile.Manager
 	lockManager    *lock.Manager
-	chromiumPath   string
+	configManager  *config.Manager
+	browserPath    string
+	browserName    string
 }
 
-func NewManager(pm *profile.Manager, lm *lock.Manager) (*Manager, error) {
-	chromiumPath, err := detectChromium()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Manager{
+func NewManager(pm *profile.Manager, lm *lock.Manager, cm *config.Manager) *Manager {
+	m := &Manager{
 		profileManager: pm,
 		lockManager:    lm,
-		chromiumPath:   chromiumPath,
-	}, nil
+		configManager:  cm,
+	}
+
+	cfg := cm.Get()
+	if cfg.BrowserPath != "" {
+		if _, err := os.Stat(cfg.BrowserPath); err == nil {
+			m.browserPath = cfg.BrowserPath
+			m.browserName = cfg.BrowserName
+			return m
+		}
+		if path, err := exec.LookPath(cfg.BrowserPath); err == nil {
+			m.browserPath = path
+			m.browserName = cfg.BrowserName
+			return m
+		}
+	}
+
+	browsers := DetectBrowsers()
+	if len(browsers) > 0 {
+		m.browserPath = browsers[0].Path
+		m.browserName = browsers[0].Name
+	}
+
+	return m
 }
 
-func (m *Manager) SetChromiumPath(path string) {
-	m.chromiumPath = path
+func (m *Manager) SetBrowser(name, path string) error {
+	m.browserPath = path
+	m.browserName = name
+	return m.configManager.SetBrowser(name, path)
 }
 
-func (m *Manager) GetChromiumPath() string {
-	return m.chromiumPath
+func (m *Manager) GetBrowserPath() string {
+	return m.browserPath
+}
+
+func (m *Manager) GetBrowserName() string {
+	return m.browserName
+}
+
+func (m *Manager) HasBrowser() bool {
+	return m.browserPath != ""
 }
 
 func (m *Manager) Launch(profileID string) (int, error) {
+	if m.browserPath == "" {
+		return 0, fmt.Errorf("no browser configured. Please select a browser in settings")
+	}
+
 	p, err := m.profileManager.Get(profileID)
 	if err != nil {
 		return 0, err
@@ -53,7 +91,7 @@ func (m *Manager) Launch(profileID string) (int, error) {
 		return 0, fmt.Errorf("profile is already running: %s", p.Name)
 	}
 
-	cmd := exec.Command(m.chromiumPath,
+	cmd := exec.Command(m.browserPath,
 		"--user-data-dir="+profileDir,
 		"--no-first-run",
 		"--no-default-browser-check",
@@ -62,7 +100,7 @@ func (m *Manager) Launch(profileID string) (int, error) {
 	setSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("failed to start chromium: %w", err)
+		return 0, fmt.Errorf("failed to start browser: %w", err)
 	}
 
 	pid := cmd.Process.Pid
@@ -79,7 +117,7 @@ func (m *Manager) Launch(profileID string) (int, error) {
 	}
 
 	if logger.Info != nil {
-		logger.Info.Printf("launched chromium for profile %s (PID: %d)", p.Name, pid)
+		logger.Info.Printf("launched %s for profile %s (PID: %d)", m.browserName, p.Name, pid)
 	}
 
 	go m.waitForExit(cmd, profileID, profileDir)
@@ -110,7 +148,7 @@ func (m *Manager) Stop(profileID string) error {
 	m.profileManager.UpdateStatus(profileID, profile.StatusStopped)
 
 	if logger.Info != nil {
-		logger.Info.Printf("stopped chromium for profile %s (PID: %d)", profileID, pid)
+		logger.Info.Printf("stopped browser for profile %s (PID: %d)", profileID, pid)
 	}
 
 	return nil
@@ -127,44 +165,82 @@ func (m *Manager) waitForExit(cmd *exec.Cmd, profileID, profileDir string) {
 	m.profileManager.UpdateStatus(profileID, profile.StatusStopped)
 
 	if logger.Info != nil {
-		logger.Info.Printf("chromium exited for profile %s", profileID)
+		logger.Info.Printf("browser exited for profile %s", profileID)
 	}
 }
 
-func detectChromium() (string, error) {
-	var candidates []string
+func DetectBrowsers() []Browser {
+	type candidate struct {
+		Name string
+		Bins []string
+	}
+
+	var found []Browser
 
 	if runtime.GOOS == "windows" {
 		programFiles := os.Getenv("PROGRAMFILES")
 		programFilesX86 := os.Getenv("PROGRAMFILES(X86)")
 		localAppData := os.Getenv("LOCALAPPDATA")
 
-		candidates = []string{
-			filepath.Join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(programFiles, "Chromium", "Application", "chrome.exe"),
+		candidates := []candidate{
+			{"Google Chrome", []string{
+				filepath.Join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
+				filepath.Join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
+				filepath.Join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+			}},
+			{"Chromium", []string{
+				filepath.Join(programFiles, "Chromium", "Application", "chrome.exe"),
+				filepath.Join(localAppData, "Chromium", "Application", "chrome.exe"),
+			}},
+			{"Brave", []string{
+				filepath.Join(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+				filepath.Join(programFilesX86, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+				filepath.Join(localAppData, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+			}},
+			{"Microsoft Edge", []string{
+				filepath.Join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+				filepath.Join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+			}},
+			{"Vivaldi", []string{
+				filepath.Join(localAppData, "Vivaldi", "Application", "vivaldi.exe"),
+				filepath.Join(programFiles, "Vivaldi", "Application", "vivaldi.exe"),
+			}},
+			{"Opera", []string{
+				filepath.Join(localAppData, "Programs", "Opera", "opera.exe"),
+				filepath.Join(programFiles, "Opera", "opera.exe"),
+			}},
+			{"Opera GX", []string{
+				filepath.Join(localAppData, "Programs", "Opera GX", "opera.exe"),
+			}},
+		}
+
+		for _, c := range candidates {
+			for _, bin := range c.Bins {
+				if _, err := os.Stat(bin); err == nil {
+					found = append(found, Browser{Name: c.Name, Path: bin})
+					break
+				}
+			}
 		}
 	} else {
-		candidates = []string{
-			"chromium",
-			"chromium-browser",
-			"google-chrome",
-			"google-chrome-stable",
+		candidates := []candidate{
+			{"Google Chrome", []string{"google-chrome", "google-chrome-stable"}},
+			{"Chromium", []string{"chromium", "chromium-browser"}},
+			{"Brave", []string{"brave-browser", "brave-browser-stable", "brave"}},
+			{"Microsoft Edge", []string{"microsoft-edge", "microsoft-edge-stable"}},
+			{"Vivaldi", []string{"vivaldi", "vivaldi-stable"}},
+			{"Opera", []string{"opera"}},
+		}
+
+		for _, c := range candidates {
+			for _, bin := range c.Bins {
+				if path, err := exec.LookPath(bin); err == nil {
+					found = append(found, Browser{Name: c.Name, Path: path})
+					break
+				}
+			}
 		}
 	}
 
-	for _, candidate := range candidates {
-		if runtime.GOOS == "windows" {
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate, nil
-			}
-		} else {
-			if path, err := exec.LookPath(candidate); err == nil {
-				return path, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("chromium not found. Searched: %s", strings.Join(candidates, ", "))
+	return found
 }

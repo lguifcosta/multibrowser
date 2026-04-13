@@ -7,19 +7,8 @@ on:
     branches: [main, master]
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - platform: linux
-            os: ubuntu-latest
-            artifact_name: multibrowser-linux
-          - platform: windows
-            os: windows-latest
-            artifact_name: multibrowser-windows.exe
-
-    runs-on: ${{ matrix.os }}
-
+  build-linux:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,44 +17,67 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache: false # Desabilita cache problemático no Go
+          cache: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # Cache omitido para evitar erro de sintaxe e tar
 
       - name: Install Linux Dependencies
-        if: matrix.platform == 'linux'
         run: |
           sudo apt update
           sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
 
       - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          wails build -tags "webkit2_41"
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: multibrowser-linux
+          path: build/bin/multibrowser
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wails
         shell: bash
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Build Application
+      - name: Build
         shell: bash
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
-          if [ "${{ matrix.platform }}" == "linux" ]; then
-            wails build -tags "webkit2_41"
-          else
-            wails build
-          fi
+          wails build
 
-      - name: Upload Binary Artifact
+      - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: |
-            build/bin/multibrowser
-            build/bin/multibrowser.exe
+          name: multibrowser-windows
+          path: build/bin/multibrowser.exe
 
   appimage:
-    needs: build
+    needs: build-linux
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -74,7 +86,7 @@ jobs:
       - name: Install Linux Dependencies
         run: |
           sudo apt update
-          sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
+          sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Download Linux Binary
         uses: actions/download-artifact@v4

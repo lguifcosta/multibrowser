@@ -18,12 +18,24 @@ export function DeleteProfile(arg1) {
   return window['go']['main']['App']['DeleteProfile'](arg1);
 }
 
+export function DetectBrowsers() {
+  return window['go']['main']['App']['DetectBrowsers']();
+}
+
 export function ExportBackup(arg1, arg2, arg3) {
   return window['go']['main']['App']['ExportBackup'](arg1, arg2, arg3);
 }
 
-export function GetChromiumPath() {
-  return window['go']['main']['App']['GetChromiumPath']();
+export function GetBrowserName() {
+  return window['go']['main']['App']['GetBrowserName']();
+}
+
+export function GetBrowserPath() {
+  return window['go']['main']['App']['GetBrowserPath']();
+}
+
+export function HasBrowser() {
+  return window['go']['main']['App']['HasBrowser']();
 }
 
 export function ImportBackup(arg1, arg2, arg3) {
@@ -46,8 +58,12 @@ export function RenameProfile(arg1, arg2) {
   return window['go']['main']['App']['RenameProfile'](arg1, arg2);
 }
 
-export function SetChromiumPath(arg1) {
-  return window['go']['main']['App']['SetChromiumPath'](arg1);
+export function SetBrowser(arg1, arg2) {
+  return window['go']['main']['App']['SetBrowser'](arg1, arg2);
+}
+
+export function SetCustomBrowserPath(arg1) {
+  return window['go']['main']['App']['SetCustomBrowserPath'](arg1);
 }
 
 export function StopProfile(arg1) {

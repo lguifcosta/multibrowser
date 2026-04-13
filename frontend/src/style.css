@@ -48,9 +48,34 @@ header h1 {
     font-weight: 600;
 }
 
-header .chromium-path {
+header .header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+header .browser-info {
     font-size: 0.75rem;
     color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+header .browser-name {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+header .chromium-path {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+header .browser-warning {
+    color: var(--warning);
+    font-weight: 500;
 }
 
 .toolbar {
@@ -292,4 +317,78 @@ header .chromium-path {
 ::-webkit-scrollbar-thumb {
     background: var(--border);
     border-radius: 3px;
+}
+
+/* Settings modal */
+
+.modal-settings {
+    min-width: 420px;
+    max-width: 520px;
+}
+
+.browser-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.browser-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px 14px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    color: var(--text-primary);
+    text-align: left;
+    width: 100%;
+    font-family: inherit;
+}
+
+.browser-option:hover {
+    border-color: var(--accent);
+    background: rgba(233, 69, 96, 0.05);
+}
+
+.browser-selected {
+    border-color: var(--accent);
+    background: rgba(233, 69, 96, 0.1);
+}
+
+.browser-option-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.browser-option-path {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+
+.settings-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0;
+}
+
+.settings-notice {
+    padding: 12px;
+    background: rgba(255, 152, 0, 0.1);
+    border: 1px solid rgba(255, 152, 0, 0.3);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--warning);
+    margin-bottom: 12px;
+}
+
+.btn-block {
+    width: 100%;
+    margin-top: 8px;
 }

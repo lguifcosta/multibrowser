@@ -9,11 +9,15 @@ import {
     CloneProfile,
     LaunchProfile,
     StopProfile,
-    IsProfileRunning,
     ExportBackup,
     ImportBackup,
     CleanCache,
-    GetChromiumPath
+    GetBrowserPath,
+    GetBrowserName,
+    HasBrowser,
+    DetectBrowsers,
+    SetBrowser,
+    SetCustomBrowserPath
 } from '../wailsjs/go/main/App';
 
 let profiles = [];
@@ -80,7 +84,6 @@ function showModal(title, fields, onSubmit) {
         onSubmit(values);
     };
 
-    // Enter to confirm
     overlay.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') overlay.querySelector('#modal-confirm').click();
         if (e.key === 'Escape') overlay.remove();
@@ -214,6 +217,120 @@ async function handleCleanCache(id, name) {
     }
 }
 
+async function handleSettings() {
+    let browsers = [];
+    try {
+        browsers = await DetectBrowsers();
+    } catch (e) {
+        // no browsers detected
+    }
+
+    const currentPath = await GetBrowserPath();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    let browserListHtml = '';
+    if (browsers && browsers.length > 0) {
+        browserListHtml = `
+            <div class="form-group">
+                <label>Navegadores detectados</label>
+                <div class="browser-list">
+                    ${browsers.map(b => `
+                        <button class="browser-option ${b.path === currentPath ? 'browser-selected' : ''}"
+                                data-name="${b.name}" data-path="${b.path}">
+                            <span class="browser-option-name">${b.name}</span>
+                            <span class="browser-option-path">${b.path}</span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    } else {
+        browserListHtml = `
+            <div class="settings-notice">
+                Nenhum navegador baseado em Chromium foi detectado automaticamente.
+                Informe o caminho do executavel abaixo.
+            </div>
+        `;
+    }
+
+    overlay.innerHTML = `
+        <div class="modal modal-settings">
+            <h2>Configuracoes</h2>
+            ${browserListHtml}
+            <div class="settings-divider"></div>
+            <div class="form-group">
+                <label for="custom-path">Caminho customizado do executavel</label>
+                <input type="text" id="custom-path" value="" placeholder="/caminho/para/navegador">
+            </div>
+            <button class="btn btn-secondary btn-block" id="btn-apply-custom">Usar caminho customizado</button>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="modal-cancel">Fechar</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelectorAll('.browser-option').forEach(btn => {
+        btn.onclick = async () => {
+            const name = btn.dataset.name;
+            const path = btn.dataset.path;
+            try {
+                await SetBrowser(name, path);
+                showToast(`Navegador alterado para ${name}`);
+                overlay.remove();
+                updateHeader();
+            } catch (err) {
+                showToast('Erro: ' + err, 'error');
+            }
+        };
+    });
+
+    overlay.querySelector('#btn-apply-custom').onclick = async () => {
+        const path = document.getElementById('custom-path').value.trim();
+        if (!path) return;
+        try {
+            await SetCustomBrowserPath(path);
+            showToast('Navegador customizado configurado');
+            overlay.remove();
+            updateHeader();
+        } catch (err) {
+            showToast('Erro: ' + err, 'error');
+        }
+    };
+
+    overlay.querySelector('#modal-cancel').onclick = () => overlay.remove();
+
+    overlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') overlay.remove();
+    });
+}
+
+async function updateHeader() {
+    let browserName = '';
+    let browserPath = '';
+    let hasBrowser = false;
+
+    try {
+        browserName = await GetBrowserName();
+        browserPath = await GetBrowserPath();
+        hasBrowser = await HasBrowser();
+    } catch (e) {
+        // ignore
+    }
+
+    const pathEl = document.querySelector('.browser-info');
+    if (pathEl) {
+        if (hasBrowser) {
+            pathEl.innerHTML = `<span class="browser-name">${browserName}</span> <span class="chromium-path">${browserPath}</span>`;
+        } else {
+            pathEl.innerHTML = `<span class="browser-warning">Nenhum navegador configurado</span>`;
+        }
+    }
+}
+
 function renderProfileCard(p) {
     const isRunning = p.status === 'running';
     const statusClass = isRunning ? 'status-running' : 'status-stopped';
@@ -283,20 +400,33 @@ document.addEventListener('click', (e) => {
 
 // Initialize
 async function init() {
-    let chromiumPath = '';
+    let browserName = '';
+    let browserPath = '';
+    let hasBrowser = false;
+
     try {
-        chromiumPath = await GetChromiumPath();
+        browserName = await GetBrowserName();
+        browserPath = await GetBrowserPath();
+        hasBrowser = await HasBrowser();
     } catch (e) {
-        chromiumPath = 'Chromium nao detectado';
+        // ignore
+    }
+
+    let browserInfoHtml;
+    if (hasBrowser) {
+        browserInfoHtml = `<span class="browser-name">${browserName}</span> <span class="chromium-path">${browserPath}</span>`;
+    } else {
+        browserInfoHtml = `<span class="browser-warning">Nenhum navegador configurado</span>`;
     }
 
     document.querySelector('#app').innerHTML = `
         <header>
-            <div>
+            <div class="header-left">
                 <h1>MultiBrowser</h1>
-                <span class="chromium-path">${chromiumPath}</span>
+                <span class="browser-info">${browserInfoHtml}</span>
             </div>
             <div class="toolbar">
+                <button class="btn btn-secondary" id="btn-settings" title="Configuracoes">Navegador</button>
                 <button class="btn btn-primary" id="btn-create">Novo Perfil</button>
                 <button class="btn btn-secondary" id="btn-import">Importar</button>
             </div>
@@ -306,10 +436,10 @@ async function init() {
 
     document.getElementById('btn-create').onclick = handleCreate;
     document.getElementById('btn-import').onclick = handleImport;
+    document.getElementById('btn-settings').onclick = handleSettings;
 
     await refreshProfiles();
 
-    // Poll for status changes every 3 seconds
     pollInterval = setInterval(refreshProfiles, 3000);
 }
 

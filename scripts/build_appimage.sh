@@ -1,17 +1,7 @@
 #!/bin/bash
 set -e
 
-APP=multibrowser
-
-# Determine the binary source
-# 1. First check GoReleaser path (as per .goreleaser.yml ID 'linux')
-# 2. Fallback to local 'wails build' path for easier local testing
-BINARY_SOURCE="dist/linux_linux_amd64/multibrowser"
-
-if [ ! -f "$BINARY_SOURCE" ]; then
-    echo "GoReleaser binary not found at $BINARY_SOURCE, checking local wails build..."
-    BINARY_SOURCE="build/bin/multibrowser"
-fi
+BINARY_SOURCE="build/bin/multibrowser"
 
 if [ ! -f "$BINARY_SOURCE" ]; then
     echo "ERROR: Binary not found at $BINARY_SOURCE."
@@ -48,7 +38,6 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 export NO_STRIP=1
 ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
 
-# Create dist if it doesn't exist (for local runs)
 mkdir -p dist
 mv *.AppImage dist/
 

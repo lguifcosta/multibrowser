@@ -8,7 +8,8 @@ O projeto é dividido em módulos dentro de `internal/`, cada um com seu própri
 
 - **[internal/profile/](./internal/profile/CLAUDE.md)**: Gerenciamento de metadados e diretórios de perfis.
 - **[internal/lock/](./internal/lock/CLAUDE.md)**: Sistema de lock baseado em PID para evitar múltiplas instâncias.
-- **[internal/process/](./internal/process/CLAUDE.md)**: Orquestração de processos Chromium (Spawn/Kill).
+- **[internal/process/](./internal/process/CLAUDE.md)**: Orquestração de processos de navegador (Spawn/Kill) e detecção automática.
+- **[internal/config/](./internal/config/CLAUDE.md)**: Persistência de configurações do usuário (navegador selecionado, etc.).
 - **[internal/backup/](./internal/backup/CLAUDE.md)**: Exportação/Importação de perfis com criptografia AES.
 - **[internal/cache/](./internal/cache/CLAUDE.md)**: Limpeza seletiva de arquivos temporários do navegador.
 - **[internal/logger/](./internal/logger/)**: Registro de eventos INFO e ERROR em arquivo local.

@@ -6,16 +6,13 @@ on:
       - "v*"
 
 jobs:
-  release:
+  build-linux:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Necessário para criar a release
-
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -27,44 +24,112 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # Cache omitido para evitar erro de sintaxe
 
       - name: Install Linux Dependencies
         run: |
           sudo apt update
-          sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config gcc-mingw-w64-x86-64
+          sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Build Wails (Generate assets and check build)
-        shell: bash
+      - name: Build
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
           wails build -tags "webkit2_41"
 
-      - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
         with:
-          version: latest
+          name: multibrowser-linux
+          path: build/bin/multibrowser
 
-      - name: Run GoReleaser (Linux + Windows)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: goreleaser release --clean
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wails
+        shell: bash
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build
+        shell: bash
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          wails build
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: multibrowser-windows
+          path: build/bin/multibrowser.exe
+
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Download Linux Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: multibrowser-linux
+          path: artifacts/linux
+
+      - name: Download Windows Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: multibrowser-windows
+          path: artifacts/windows
 
       - name: Build AppImage
         run: |
-          chmod +x scripts/build_appimage.sh
-          ./scripts/build_appimage.sh
+          chmod +x artifacts/linux/multibrowser
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+          mkdir -p AppDir/usr/bin
+          cp artifacts/linux/multibrowser AppDir/usr/bin/multibrowser
+          cp build/appicon.png AppDir/multibrowser.png
+          printf "[Desktop Entry]\nName=MultiBrowser\nExec=multibrowser\nIcon=multibrowser\nType=Application\nCategories=Utility;\nTerminal=false" > AppDir/multibrowser.desktop
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export NO_STRIP=1
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
 
-      - name: Upload Artifacts to Release
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p release
+          cp *.AppImage release/MultiBrowser-linux-x86_64.AppImage
+          cp artifacts/linux/multibrowser release/multibrowser-linux-amd64
+          cp artifacts/windows/multibrowser.exe release/multibrowser-windows-amd64.exe
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
-            dist/*.AppImage
-            dist/*.tar.gz
-            dist/*.zip
-            build/bin/multibrowser.exe
+            release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

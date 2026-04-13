@@ -8,6 +8,7 @@ import (
 
 	"multibrowser/internal/backup"
 	"multibrowser/internal/cache"
+	"multibrowser/internal/config"
 	"multibrowser/internal/lock"
 	"multibrowser/internal/logger"
 	"multibrowser/internal/process"
@@ -21,6 +22,7 @@ type App struct {
 	processManager *process.Manager
 	backupService  *backup.Service
 	cacheCleaner   *cache.Cleaner
+	configManager  *config.Manager
 }
 
 func NewApp() *App {
@@ -41,6 +43,11 @@ func (a *App) startup(ctx context.Context) {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
+	a.configManager, err = config.NewManager(baseDir)
+	if err != nil {
+		panic("failed to initialize config manager: " + err.Error())
+	}
+
 	a.lockManager = lock.NewManager()
 
 	a.profileManager, err = profile.NewManager(baseDir)
@@ -48,10 +55,7 @@ func (a *App) startup(ctx context.Context) {
 		panic("failed to initialize profile manager: " + err.Error())
 	}
 
-	a.processManager, err = process.NewManager(a.profileManager, a.lockManager)
-	if err != nil {
-		logger.Error.Printf("failed to detect chromium: %v", err)
-	}
+	a.processManager = process.NewManager(a.profileManager, a.lockManager, a.configManager)
 
 	a.backupService = backup.NewService(a.profileManager, a.lockManager)
 	a.cacheCleaner = cache.NewCleaner(a.profileManager, a.lockManager)
@@ -84,37 +88,44 @@ func (a *App) CloneProfile(id, newName string) (*profile.Profile, error) {
 // Process methods
 
 func (a *App) LaunchProfile(id string) (int, error) {
-	if a.processManager == nil {
-		return 0, fmt.Errorf("chromium not found")
-	}
 	return a.processManager.Launch(id)
 }
 
 func (a *App) StopProfile(id string) error {
-	if a.processManager == nil {
-		return fmt.Errorf("chromium not found")
-	}
 	return a.processManager.Stop(id)
 }
 
 func (a *App) IsProfileRunning(id string) bool {
-	if a.processManager == nil {
-		return false
-	}
 	return a.processManager.IsRunning(id)
 }
 
-func (a *App) GetChromiumPath() string {
-	if a.processManager == nil {
-		return ""
-	}
-	return a.processManager.GetChromiumPath()
+// Browser methods
+
+func (a *App) GetBrowserPath() string {
+	return a.processManager.GetBrowserPath()
 }
 
-func (a *App) SetChromiumPath(path string) {
-	if a.processManager != nil {
-		a.processManager.SetChromiumPath(path)
+func (a *App) GetBrowserName() string {
+	return a.processManager.GetBrowserName()
+}
+
+func (a *App) HasBrowser() bool {
+	return a.processManager.HasBrowser()
+}
+
+func (a *App) DetectBrowsers() []process.Browser {
+	return process.DetectBrowsers()
+}
+
+func (a *App) SetBrowser(name, path string) error {
+	return a.processManager.SetBrowser(name, path)
+}
+
+func (a *App) SetCustomBrowserPath(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("executable not found: %s", path)
 	}
+	return a.processManager.SetBrowser("Custom", path)
 }
 
 // Backup methods
