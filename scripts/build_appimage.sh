@@ -11,11 +11,11 @@ fi
 
 echo "Using binary: $BINARY_SOURCE"
 
+rm -rf AppDir
 mkdir -p AppDir/usr/bin
 cp "$BINARY_SOURCE" AppDir/usr/bin/multibrowser
 
-mkdir -p AppDir/usr/share/applications
-cat > AppDir/usr/share/applications/multibrowser.desktop <<EOL
+cat > multibrowser.desktop <<EOL
 [Desktop Entry]
 Name=MultiBrowser
 Exec=multibrowser
@@ -25,8 +25,8 @@ Categories=Utility;
 Terminal=false
 EOL
 
-mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-cp build/appicon.png AppDir/usr/share/icons/hicolor/256x256/apps/multibrowser.png
+# Icon must match the Icon= field in .desktop (multibrowser.png)
+cp build/appicon.png multibrowser.png
 
 if [ ! -f "linuxdeploy-x86_64.AppImage" ]; then
     echo "Downloading linuxdeploy..."
@@ -36,9 +36,15 @@ fi
 
 export APPIMAGE_EXTRACT_AND_RUN=1
 export NO_STRIP=1
-./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+./linuxdeploy-x86_64.AppImage \
+    --appdir AppDir \
+    --executable "$BINARY_SOURCE" \
+    --desktop-file multibrowser.desktop \
+    --icon-file multibrowser.png \
+    --output appimage
 
+rm -f multibrowser.desktop multibrowser.png
 mkdir -p dist
-mv *.AppImage dist/
+find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy*' -exec mv {} dist/ \;
 
 echo "AppImage generated successfully in dist/"

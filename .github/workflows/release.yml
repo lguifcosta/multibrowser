@@ -112,11 +112,16 @@ jobs:
           chmod +x linuxdeploy-x86_64.AppImage
           mkdir -p AppDir/usr/bin
           cp artifacts/linux/multibrowser AppDir/usr/bin/multibrowser
-          cp build/appicon.png AppDir/multibrowser.png
-          printf "[Desktop Entry]\nName=MultiBrowser\nExec=multibrowser\nIcon=multibrowser\nType=Application\nCategories=Utility;\nTerminal=false" > AppDir/multibrowser.desktop
+          printf "[Desktop Entry]\nName=MultiBrowser\nExec=multibrowser\nIcon=multibrowser\nType=Application\nCategories=Utility;\nTerminal=false\n" > multibrowser.desktop
+          cp build/appicon.png multibrowser.png
           export APPIMAGE_EXTRACT_AND_RUN=1
           export NO_STRIP=1
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --output appimage
+          ./linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --executable artifacts/linux/multibrowser \
+            --desktop-file multibrowser.desktop \
+            --icon-file multibrowser.png \
+            --output appimage
 
       - name: Prepare Release Assets
         run: |
