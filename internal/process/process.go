@@ -6,7 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"syscall"
+	"time"
 
 	"multibrowser/internal/config"
 	"multibrowser/internal/lock"
@@ -19,12 +21,32 @@ type Browser struct {
 	Path string `json:"path"`
 }
 
+type ProcessTelemetry struct {
+	PID         int     `json:"pid"`
+	CPUPercent  float64 `json:"cpu_percent"`
+	RAMMB       float64 `json:"ram_mb"`
+	LifetimeSec int64   `json:"lifetime_sec"`
+	IsRunning   bool    `json:"is_running"`
+}
+
+type runningProcess struct {
+	pid           int
+	startedAt     time.Time
+	cmd           *exec.Cmd
+	prevProcJiff  uint64
+	prevTotalJiff uint64
+	cpuPercent    float64
+	ramMB         float64
+}
+
 type Manager struct {
 	profileManager *profile.Manager
 	lockManager    *lock.Manager
 	configManager  *config.Manager
 	browserPath    string
 	browserName    string
+	running        map[string]*runningProcess
+	runMu          sync.RWMutex
 }
 
 func NewManager(pm *profile.Manager, lm *lock.Manager, cm *config.Manager) *Manager {
@@ -32,6 +54,7 @@ func NewManager(pm *profile.Manager, lm *lock.Manager, cm *config.Manager) *Mana
 		profileManager: pm,
 		lockManager:    lm,
 		configManager:  cm,
+		running:        make(map[string]*runningProcess),
 	}
 
 	cfg := cm.Get()
@@ -39,22 +62,57 @@ func NewManager(pm *profile.Manager, lm *lock.Manager, cm *config.Manager) *Mana
 		if _, err := os.Stat(cfg.BrowserPath); err == nil {
 			m.browserPath = cfg.BrowserPath
 			m.browserName = cfg.BrowserName
-			return m
-		}
-		if path, err := exec.LookPath(cfg.BrowserPath); err == nil {
+		} else if path, err := exec.LookPath(cfg.BrowserPath); err == nil {
 			m.browserPath = path
 			m.browserName = cfg.BrowserName
-			return m
 		}
 	}
 
-	browsers := DetectBrowsers()
-	if len(browsers) > 0 {
-		m.browserPath = browsers[0].Path
-		m.browserName = browsers[0].Name
+	if m.browserPath == "" {
+		browsers := DetectBrowsers()
+		if len(browsers) > 0 {
+			m.browserPath = browsers[0].Path
+			m.browserName = browsers[0].Name
+		}
 	}
 
+	go m.monitorTelemetry()
+
 	return m
+}
+
+func (m *Manager) monitorTelemetry() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		m.runMu.Lock()
+		for _, rp := range m.running {
+			cpu, ram, curProc, curTotal := sampleTelemetry(rp.pid, rp.prevProcJiff, rp.prevTotalJiff)
+			rp.cpuPercent = cpu
+			rp.ramMB = ram
+			rp.prevProcJiff = curProc
+			rp.prevTotalJiff = curTotal
+		}
+		m.runMu.Unlock()
+	}
+}
+
+func (m *Manager) GetTelemetry(profileID string) (ProcessTelemetry, bool) {
+	m.runMu.RLock()
+	defer m.runMu.RUnlock()
+
+	rp, ok := m.running[profileID]
+	if !ok {
+		return ProcessTelemetry{IsRunning: false}, false
+	}
+
+	return ProcessTelemetry{
+		PID:         rp.pid,
+		CPUPercent:  rp.cpuPercent,
+		RAMMB:       rp.ramMB,
+		LifetimeSec: int64(time.Since(rp.startedAt).Seconds()),
+		IsRunning:   true,
+	}, true
 }
 
 func (m *Manager) SetBrowser(name, path string) error {
@@ -91,12 +149,8 @@ func (m *Manager) Launch(profileID string) (int, error) {
 		return 0, fmt.Errorf("profile is already running: %s", p.Name)
 	}
 
-	cmd := exec.Command(m.browserPath,
-		"--user-data-dir="+profileDir,
-		"--no-first-run",
-		"--no-default-browser-check",
-	)
-
+	args := buildArgs(profileDir, p.Flags)
+	cmd := exec.Command(m.browserPath, args...)
 	setSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
@@ -109,6 +163,14 @@ func (m *Manager) Launch(profileID string) (int, error) {
 		cmd.Process.Kill()
 		return 0, fmt.Errorf("failed to acquire lock: %w", err)
 	}
+
+	m.runMu.Lock()
+	m.running[profileID] = &runningProcess{
+		pid:       pid,
+		startedAt: time.Now(),
+		cmd:       cmd,
+	}
+	m.runMu.Unlock()
 
 	if err := m.profileManager.UpdateStatus(profileID, profile.StatusRunning); err != nil {
 		if logger.Error != nil {
@@ -125,6 +187,51 @@ func (m *Manager) Launch(profileID string) (int, error) {
 	return pid, nil
 }
 
+func buildArgs(profileDir string, flags profile.ProfileFlags) []string {
+	args := []string{
+		"--user-data-dir=" + profileDir,
+		"--no-first-run",
+		"--no-default-browser-check",
+	}
+	if flags.RestoreLastSession {
+		args = append(args, "--restore-last-session")
+	}
+	if flags.UserAgent != "" {
+		args = append(args, "--user-agent="+flags.UserAgent)
+	}
+	if flags.Lang != "" {
+		args = append(args, "--lang="+flags.Lang)
+	}
+	if flags.WindowSize != "" {
+		args = append(args, "--window-size="+flags.WindowSize)
+	}
+	if flags.ProxyServer != "" {
+		args = append(args, "--proxy-server="+flags.ProxyServer)
+		if flags.ProxyBypassList != "" {
+			args = append(args, "--proxy-bypass-list="+flags.ProxyBypassList)
+		}
+	}
+	if flags.DisableBackgroundNetworking {
+		args = append(args, "--disable-background-networking")
+	}
+	if flags.DisableBackgroundTimerThrottling {
+		args = append(args, "--disable-background-timer-throttling")
+	}
+	if flags.DisableRendererBackgrounding {
+		args = append(args, "--disable-renderer-backgrounding")
+	}
+	if flags.DisableFeaturesTranslateUI {
+		args = append(args, "--disable-features=TranslateUI")
+	}
+	if flags.DisableExtensions {
+		args = append(args, "--disable-extensions")
+	}
+	if flags.DisableSync {
+		args = append(args, "--disable-sync")
+	}
+	return args
+}
+
 func (m *Manager) Stop(profileID string) error {
 	profileDir := m.profileManager.ProfileDir(profileID)
 
@@ -133,16 +240,23 @@ func (m *Manager) Stop(profileID string) error {
 		return fmt.Errorf("profile is not running: %s", profileID)
 	}
 
-	process, err := os.FindProcess(pid)
+	proc, err := os.FindProcess(pid)
 	if err != nil {
 		m.lockManager.Release(profileDir)
 		m.profileManager.UpdateStatus(profileID, profile.StatusStopped)
+		m.runMu.Lock()
+		delete(m.running, profileID)
+		m.runMu.Unlock()
 		return nil
 	}
 
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		process.Kill()
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		proc.Kill()
 	}
+
+	m.runMu.Lock()
+	delete(m.running, profileID)
+	m.runMu.Unlock()
 
 	m.lockManager.Release(profileDir)
 	m.profileManager.UpdateStatus(profileID, profile.StatusStopped)
@@ -161,6 +275,11 @@ func (m *Manager) IsRunning(profileID string) bool {
 
 func (m *Manager) waitForExit(cmd *exec.Cmd, profileID, profileDir string) {
 	cmd.Wait()
+
+	m.runMu.Lock()
+	delete(m.running, profileID)
+	m.runMu.Unlock()
+
 	m.lockManager.Release(profileDir)
 	m.profileManager.UpdateStatus(profileID, profile.StatusStopped)
 

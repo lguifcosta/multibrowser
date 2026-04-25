@@ -18,12 +18,28 @@ const (
 	StatusStopped Status = "stopped"
 )
 
+type ProfileFlags struct {
+	RestoreLastSession               bool   `json:"restore_last_session"`
+	UserAgent                        string `json:"user_agent"`
+	Lang                             string `json:"lang"`
+	WindowSize                       string `json:"window_size"`
+	ProxyServer                      string `json:"proxy_server"`
+	ProxyBypassList                  string `json:"proxy_bypass_list"`
+	DisableBackgroundNetworking      bool   `json:"disable_background_networking"`
+	DisableBackgroundTimerThrottling bool   `json:"disable_background_timer_throttling"`
+	DisableRendererBackgrounding     bool   `json:"disable_renderer_backgrounding"`
+	DisableFeaturesTranslateUI       bool   `json:"disable_features_translate_ui"`
+	DisableExtensions                bool   `json:"disable_extensions"`
+	DisableSync                      bool   `json:"disable_sync"`
+}
+
 type Profile struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	LastUsed  time.Time `json:"last_used"`
-	Status    Status    `json:"status"`
+	ID        string       `json:"id"`
+	Name      string       `json:"name"`
+	CreatedAt time.Time    `json:"created_at"`
+	LastUsed  time.Time    `json:"last_used"`
+	Status    Status       `json:"status"`
+	Flags     ProfileFlags `json:"flags"`
 }
 
 type Metadata struct {
@@ -259,6 +275,25 @@ func (m *Manager) Clone(id, newName string) (*Profile, error) {
 	}
 
 	return &newProfile, nil
+}
+
+func (m *Manager) UpdateFlags(id string, flags ProfileFlags) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, err := m.loadMetadata()
+	if err != nil {
+		return err
+	}
+
+	for i, p := range meta.Profiles {
+		if p.ID == id {
+			meta.Profiles[i].Flags = flags
+			return m.saveMetadata(meta)
+		}
+	}
+
+	return fmt.Errorf("profile not found: %s", id)
 }
 
 func (m *Manager) UpdateStatus(id string, status Status) error {

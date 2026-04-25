@@ -34,6 +34,18 @@ export function GetBrowserPath() {
   return window['go']['main']['App']['GetBrowserPath']();
 }
 
+export function GetProfileFlags(arg1) {
+  return window['go']['main']['App']['GetProfileFlags'](arg1);
+}
+
+export function GetProfileInfo(arg1) {
+  return window['go']['main']['App']['GetProfileInfo'](arg1);
+}
+
+export function GetProfileTelemetry(arg1) {
+  return window['go']['main']['App']['GetProfileTelemetry'](arg1);
+}
+
 export function HasBrowser() {
   return window['go']['main']['App']['HasBrowser']();
 }
@@ -68,4 +80,8 @@ export function SetCustomBrowserPath(arg1) {
 
 export function StopProfile(arg1) {
   return window['go']['main']['App']['StopProfile'](arg1);
+}
+
+export function UpdateProfileFlags(arg1, arg2) {
+  return window['go']['main']['App']['UpdateProfileFlags'](arg1, arg2);
 }

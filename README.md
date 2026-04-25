@@ -57,6 +57,27 @@ wails build
 go test ./...
 ```
 
+## Executando o AppImage
+
+O AppImage requer **FUSE 2** para montar o pacote em tempo de execução. A maioria das distros já vem com ele, mas no Ubuntu 22.04+, Debian 12+ e derivados (incluindo ZorinOS) pode ser necessário instalar:
+
+```bash
+sudo apt install libfuse2
+```
+
+Caso prefira não instalar o FUSE, é possível rodar o AppImage extraindo-o em memória:
+
+```bash
+./MultiBrowser-linux-x86_64.AppImage --appimage-extract-and-run
+```
+
+Ou extrair permanentemente e rodar o `AppRun` diretamente:
+
+```bash
+./MultiBrowser-linux-x86_64.AppImage --appimage-extract
+./squashfs-root/AppRun
+```
+
 ## Estrutura do Projeto
 
 - `app.go`: Ponto de entrada e integração dos serviços.

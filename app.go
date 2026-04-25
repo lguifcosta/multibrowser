@@ -25,6 +25,12 @@ type App struct {
 	configManager  *config.Manager
 }
 
+type ProfileInfo struct {
+	ProfileDir  string  `json:"profile_dir"`
+	DiskUsageMB float64 `json:"disk_usage_mb"`
+	CrashCount  int     `json:"crash_count"`
+}
+
 func NewApp() *App {
 	return &App{}
 }
@@ -85,6 +91,35 @@ func (a *App) CloneProfile(id, newName string) (*profile.Profile, error) {
 	return a.profileManager.Clone(id, newName)
 }
 
+func (a *App) GetProfileFlags(id string) (*profile.ProfileFlags, error) {
+	p, err := a.profileManager.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return &p.Flags, nil
+}
+
+func (a *App) UpdateProfileFlags(id string, flags profile.ProfileFlags) error {
+	return a.profileManager.UpdateFlags(id, flags)
+}
+
+func (a *App) GetProfileTelemetry(id string) (*process.ProcessTelemetry, error) {
+	telem, ok := a.processManager.GetTelemetry(id)
+	if !ok {
+		return &process.ProcessTelemetry{IsRunning: false}, nil
+	}
+	return &telem, nil
+}
+
+func (a *App) GetProfileInfo(id string) (*ProfileInfo, error) {
+	profileDir := a.profileManager.ProfileDir(id)
+	return &ProfileInfo{
+		ProfileDir:  profileDir,
+		DiskUsageMB: dirSizeMB(profileDir),
+		CrashCount:  countCrashReports(profileDir),
+	}, nil
+}
+
 // Process methods
 
 func (a *App) LaunchProfile(id string) (int, error) {
@@ -142,4 +177,33 @@ func (a *App) ImportBackup(backupPath, newName, password string) (*profile.Profi
 
 func (a *App) CleanCache(profileID string) (int64, error) {
 	return a.cacheCleaner.Clean(profileID)
+}
+
+// Helpers
+
+func dirSizeMB(path string) float64 {
+	var size int64
+	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		size += info.Size()
+		return nil
+	})
+	return float64(size) / 1024.0 / 1024.0
+}
+
+func countCrashReports(profileDir string) int {
+	reportDir := filepath.Join(profileDir, "Crashpad", "reports")
+	entries, err := os.ReadDir(reportDir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			count++
+		}
+	}
+	return count
 }
