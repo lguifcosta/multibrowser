@@ -54,16 +54,21 @@ func TestManager(t *testing.T) {
 
 func TestBuildArgs(t *testing.T) {
 	profileDir := "/tmp/profile1"
+	restore := true
 	flags := profile.ProfileFlags{
-		RestoreLastSession: true,
+		RestoreLastSession: &restore,
 		UserAgent:          "Mozilla/5.0",
 		Lang:               "en-US",
 		WindowSize:         "1024,768",
 		ProxyServer:        "http://proxy:8080",
-		DisableExtensions:  true,
 	}
 
-	args := buildArgs(profileDir, flags)
+	ext := true
+	global := config.GlobalFlags{
+		DisableExtensions: &ext,
+	}
+
+	args := buildArgs(profileDir, flags, global)
 
 	expectedArgs := []string{
 		"--user-data-dir=" + profileDir,

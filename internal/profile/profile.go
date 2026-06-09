@@ -19,18 +19,18 @@ const (
 )
 
 type ProfileFlags struct {
-	RestoreLastSession               bool   `json:"restore_last_session"`
+	RestoreLastSession               *bool  `json:"restore_last_session,omitempty"`
 	UserAgent                        string `json:"user_agent"`
 	Lang                             string `json:"lang"`
 	WindowSize                       string `json:"window_size"`
 	ProxyServer                      string `json:"proxy_server"`
 	ProxyBypassList                  string `json:"proxy_bypass_list"`
-	DisableBackgroundNetworking      bool   `json:"disable_background_networking"`
-	DisableBackgroundTimerThrottling bool   `json:"disable_background_timer_throttling"`
-	DisableRendererBackgrounding     bool   `json:"disable_renderer_backgrounding"`
-	DisableFeaturesTranslateUI       bool   `json:"disable_features_translate_ui"`
-	DisableExtensions                bool   `json:"disable_extensions"`
-	DisableSync                      bool   `json:"disable_sync"`
+	DisableBackgroundNetworking      *bool  `json:"disable_background_networking,omitempty"`
+	DisableBackgroundTimerThrottling *bool  `json:"disable_background_timer_throttling,omitempty"`
+	DisableRendererBackgrounding     *bool  `json:"disable_renderer_backgrounding,omitempty"`
+	DisableFeaturesTranslateUI       *bool  `json:"disable_features_translate_ui,omitempty"`
+	DisableExtensions                *bool  `json:"disable_extensions,omitempty"`
+	DisableSync                      *bool  `json:"disable_sync,omitempty"`
 }
 
 type Group struct {

@@ -8,10 +8,21 @@ import (
 )
 
 type Config struct {
-	BrowserPath       string `json:"browser_path"`
-	BrowserName       string `json:"browser_name"`
-	ShowUnassignedTab bool   `json:"show_unassigned_tab"`
-	DefaultTabID      string `json:"default_tab_id"`
+	BrowserPath       string      `json:"browser_path"`
+	BrowserName       string      `json:"browser_name"`
+	ShowUnassignedTab bool        `json:"show_unassigned_tab"`
+	DefaultTabID      string      `json:"default_tab_id"`
+	GlobalFlags       GlobalFlags `json:"global_flags"`
+}
+
+type GlobalFlags struct {
+	RestoreLastSession               *bool   `json:"restore_last_session,omitempty"`
+	DisableBackgroundNetworking      *bool   `json:"disable_background_networking,omitempty"`
+	DisableBackgroundTimerThrottling *bool   `json:"disable_background_timer_throttling,omitempty"`
+	DisableRendererBackgrounding     *bool   `json:"disable_renderer_backgrounding,omitempty"`
+	DisableFeaturesTranslateUI       *bool   `json:"disable_features_translate_ui,omitempty"`
+	DisableExtensions                *bool   `json:"disable_extensions,omitempty"`
+	DisableSync                      *bool   `json:"disable_sync,omitempty"`
 }
 
 type Manager struct {

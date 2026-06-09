@@ -149,7 +149,8 @@ func (m *Manager) Launch(profileID string) (int, error) {
 		return 0, fmt.Errorf("profile is already running: %s", p.Name)
 	}
 
-	args := buildArgs(profileDir, p.Flags)
+	globalFlags := m.configManager.Get().GlobalFlags
+	args := buildArgs(profileDir, p.Flags, globalFlags)
 	cmd := exec.Command(m.browserPath, args...)
 	setSysProcAttr(cmd)
 
@@ -187,13 +188,24 @@ func (m *Manager) Launch(profileID string) (int, error) {
 	return pid, nil
 }
 
-func buildArgs(profileDir string, flags profile.ProfileFlags) []string {
+func buildArgs(profileDir string, flags profile.ProfileFlags, global config.GlobalFlags) []string {
 	args := []string{
 		"--user-data-dir=" + profileDir,
 		"--no-first-run",
 		"--no-default-browser-check",
 	}
-	if flags.RestoreLastSession {
+
+	resolveBool := func(pFlag *bool, gFlag *bool) bool {
+		if pFlag != nil {
+			return *pFlag
+		}
+		if gFlag != nil {
+			return *gFlag
+		}
+		return false
+	}
+
+	if resolveBool(flags.RestoreLastSession, global.RestoreLastSession) {
 		args = append(args, "--restore-last-session")
 	}
 	if flags.UserAgent != "" {
@@ -211,22 +223,22 @@ func buildArgs(profileDir string, flags profile.ProfileFlags) []string {
 			args = append(args, "--proxy-bypass-list="+flags.ProxyBypassList)
 		}
 	}
-	if flags.DisableBackgroundNetworking {
+	if resolveBool(flags.DisableBackgroundNetworking, global.DisableBackgroundNetworking) {
 		args = append(args, "--disable-background-networking")
 	}
-	if flags.DisableBackgroundTimerThrottling {
+	if resolveBool(flags.DisableBackgroundTimerThrottling, global.DisableBackgroundTimerThrottling) {
 		args = append(args, "--disable-background-timer-throttling")
 	}
-	if flags.DisableRendererBackgrounding {
+	if resolveBool(flags.DisableRendererBackgrounding, global.DisableRendererBackgrounding) {
 		args = append(args, "--disable-renderer-backgrounding")
 	}
-	if flags.DisableFeaturesTranslateUI {
+	if resolveBool(flags.DisableFeaturesTranslateUI, global.DisableFeaturesTranslateUI) {
 		args = append(args, "--disable-features=TranslateUI")
 	}
-	if flags.DisableExtensions {
+	if resolveBool(flags.DisableExtensions, global.DisableExtensions) {
 		args = append(args, "--disable-extensions")
 	}
-	if flags.DisableSync {
+	if resolveBool(flags.DisableSync, global.DisableSync) {
 		args = append(args, "--disable-sync")
 	}
 	return args
