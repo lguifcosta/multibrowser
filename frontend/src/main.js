@@ -22,6 +22,20 @@ let isDragging = false;
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
+window.addEventListener('unhandledrejection', event => {
+    showToast('Erro inesperado: ' + event.reason, 'error');
+});
+
+async function safeCall(promise, errorMessage = 'Erro') {
+    try {
+        return await promise;
+    } catch (err) {
+        showToast(`${errorMessage}: ${err}`, 'error');
+        console.error(err);
+        throw err; // Re-throw to allow local handling if needed
+    }
+}
+
 function showToast(message, type = 'success') {
     const existing = document.querySelector('.toast');
     if (existing) existing.remove();
@@ -84,14 +98,25 @@ function showModal(title, fields, onSubmit) {
     if (firstInput) firstInput.focus();
 
     overlay.querySelector('#modal-cancel').onclick = () => overlay.remove();
-    overlay.querySelector('#modal-confirm').onclick = () => {
+    overlay.querySelector('#modal-confirm').onclick = async () => {
         const values = {};
         fields.forEach(f => {
             const el = document.getElementById(`modal-${f.name}`);
             values[f.name] = f.type === 'checkbox' ? el.checked : el.value;
         });
-        overlay.remove();
-        onSubmit(values);
+
+        const btn = overlay.querySelector('#modal-confirm');
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Processando...';
+
+        try {
+            await onSubmit(values);
+            overlay.remove();
+        } catch (err) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     };
 
     overlay.addEventListener('keydown', (e) => {
@@ -659,9 +684,24 @@ function openProfileSettingsModal(p, flags) {
 
 async function handleSettings() {
     let browsers = [];
-    try { browsers = await DetectBrowsers(); } catch (e) {}
-    const currentPath = await GetBrowserPath();
-    const config = await GetConfig();
+    try {
+        browsers = await DetectBrowsers();
+    } catch (e) {
+        console.warn('Failed to detect browsers', e);
+    }
+
+    let currentPath = '';
+    let config = {};
+
+    try {
+        [currentPath, config] = await Promise.all([
+            GetBrowserPath(),
+            GetConfig()
+        ]);
+    } catch (err) {
+        showToast('Erro ao carregar configuracoes: ' + err, 'error');
+        return;
+    }
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -762,18 +802,21 @@ async function handleSettings() {
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 async function updateHeader() {
-    let browserName = '', browserPath = '', hasBrowser = false;
     try {
-        browserName = await GetBrowserName();
-        browserPath = await GetBrowserPath();
-        hasBrowser  = await HasBrowser();
-    } catch (e) {}
+        const [browserName, browserPath, hasBrowser] = await Promise.all([
+            GetBrowserName(),
+            GetBrowserPath(),
+            HasBrowser()
+        ]);
 
-    const el = document.querySelector('.browser-info');
-    if (el) {
-        el.innerHTML = hasBrowser
-            ? `<span class="browser-name">${browserName}</span><span class="chromium-path">${browserPath}</span>`
-            : `<span class="browser-warning">Nenhum navegador configurado</span>`;
+        const el = document.querySelector('.browser-info');
+        if (el) {
+            el.innerHTML = hasBrowser
+                ? `<span class="browser-name">${browserName}</span><span class="chromium-path">${browserPath}</span>`
+                : `<span class="browser-warning">Nenhum navegador configurado</span>`;
+        }
+    } catch (err) {
+        console.error('Failed to update header', err);
     }
 }
 
@@ -1118,14 +1161,31 @@ function render() {
 
 // ─── Event delegation ─────────────────────────────────────────────────────────
 
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
     const btn = e.target.closest('[data-action]');
-    if (!btn) return;
-    const { action, id, name } = btn.dataset;
-    switch (action) {
-        case 'launch': handleLaunch(id); break;
-        case 'stop':   handleStop(id); break;
-        case 'config': handleProfileSettings(id); break;
+    if (!btn || btn.disabled) return;
+    
+    const { action, id } = btn.dataset;
+    const originalText = btn.textContent;
+    
+    // Simple inline loading state
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    try {
+        switch (action) {
+            case 'launch': await handleLaunch(id); break;
+            case 'stop':   await handleStop(id); break;
+            case 'config': await handleProfileSettings(id); break;
+        }
+    } catch (err) {
+        console.error('Action failed', err);
+    } finally {
+        // Only restore if not re-rendered (though refreshProfiles usually re-renders)
+        if (document.body.contains(btn)) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
     }
 });
 
@@ -1134,10 +1194,15 @@ document.addEventListener('click', e => {
 async function init() {
     let browserName = '', browserPath = '', hasBrowser = false;
     try {
-        browserName = await GetBrowserName();
-        browserPath = await GetBrowserPath();
-        hasBrowser  = await HasBrowser();
-    } catch (e) {}
+        [browserName, browserPath, hasBrowser] = await Promise.all([
+            GetBrowserName(),
+            GetBrowserPath(),
+            HasBrowser()
+        ]);
+    } catch (err) {
+        console.error('Failed to initialize app state', err);
+        // We continue anyway to render the shell
+    }
 
     const browserInfoHtml = hasBrowser
         ? `<span class="browser-name">${browserName}</span><span class="chromium-path">${browserPath}</span>`
