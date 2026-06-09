@@ -13,6 +13,8 @@ import (
 	"multibrowser/internal/logger"
 	"multibrowser/internal/process"
 	"multibrowser/internal/profile"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
@@ -40,25 +42,29 @@ func (a *App) startup(ctx context.Context) {
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		panic("failed to get home directory: " + err.Error())
+		a.criticalError("Failed to get home directory", err)
+		return
 	}
 
 	baseDir := filepath.Join(homeDir, ".multibrowser")
 
 	if err := logger.Init(baseDir); err != nil {
-		panic("failed to initialize logger: " + err.Error())
+		a.criticalError("Failed to initialize logger", err)
+		return
 	}
 
 	a.configManager, err = config.NewManager(baseDir)
 	if err != nil {
-		panic("failed to initialize config manager: " + err.Error())
+		a.criticalError("Failed to initialize config manager", err)
+		return
 	}
 
 	a.lockManager = lock.NewManager()
 
 	a.profileManager, err = profile.NewManager(baseDir)
 	if err != nil {
-		panic("failed to initialize profile manager: " + err.Error())
+		a.criticalError("Failed to initialize profile manager", err)
+		return
 	}
 
 	a.processManager = process.NewManager(a.profileManager, a.lockManager, a.configManager)
@@ -67,6 +73,22 @@ func (a *App) startup(ctx context.Context) {
 	a.cacheCleaner = cache.NewCleaner(a.profileManager, a.lockManager)
 
 	logger.Info.Println("application started")
+}
+
+func (a *App) criticalError(title string, err error) {
+	msg := fmt.Sprintf("%s: %v", title, err)
+	if logger.Error != nil {
+		logger.Error.Println(msg)
+	} else {
+		fmt.Printf("CRITICAL ERROR: %s\n", msg)
+	}
+
+	runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+		Type:    runtime.ErrorDialog,
+		Title:   "Critical Error",
+		Message: msg,
+	})
+	runtime.Quit(a.ctx)
 }
 
 // Profile methods
