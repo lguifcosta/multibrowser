@@ -1,10 +1,35 @@
 export namespace config {
 	
+	export class GlobalFlags {
+	    restore_last_session?: boolean;
+	    disable_background_networking?: boolean;
+	    disable_background_timer_throttling?: boolean;
+	    disable_renderer_backgrounding?: boolean;
+	    disable_features_translate_ui?: boolean;
+	    disable_extensions?: boolean;
+	    disable_sync?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new GlobalFlags(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.restore_last_session = source["restore_last_session"];
+	        this.disable_background_networking = source["disable_background_networking"];
+	        this.disable_background_timer_throttling = source["disable_background_timer_throttling"];
+	        this.disable_renderer_backgrounding = source["disable_renderer_backgrounding"];
+	        this.disable_features_translate_ui = source["disable_features_translate_ui"];
+	        this.disable_extensions = source["disable_extensions"];
+	        this.disable_sync = source["disable_sync"];
+	    }
+	}
 	export class Config {
 	    browser_path: string;
 	    browser_name: string;
 	    show_unassigned_tab: boolean;
 	    default_tab_id: string;
+	    global_flags: GlobalFlags;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -16,7 +41,26 @@ export namespace config {
 	        this.browser_name = source["browser_name"];
 	        this.show_unassigned_tab = source["show_unassigned_tab"];
 	        this.default_tab_id = source["default_tab_id"];
+	        this.global_flags = this.convertValues(source["global_flags"], GlobalFlags);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
@@ -119,18 +163,18 @@ export namespace profile {
 		}
 	}
 	export class ProfileFlags {
-	    restore_last_session: boolean;
+	    restore_last_session?: boolean;
 	    user_agent: string;
 	    lang: string;
 	    window_size: string;
 	    proxy_server: string;
 	    proxy_bypass_list: string;
-	    disable_background_networking: boolean;
-	    disable_background_timer_throttling: boolean;
-	    disable_renderer_backgrounding: boolean;
-	    disable_features_translate_ui: boolean;
-	    disable_extensions: boolean;
-	    disable_sync: boolean;
+	    disable_background_networking?: boolean;
+	    disable_background_timer_throttling?: boolean;
+	    disable_renderer_backgrounding?: boolean;
+	    disable_features_translate_ui?: boolean;
+	    disable_extensions?: boolean;
+	    disable_sync?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProfileFlags(source);

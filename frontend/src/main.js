@@ -398,8 +398,26 @@ function openProfileSettingsModal(p, flags) {
     overlay.className = 'modal-overlay';
 
     const esc = v => String(v ?? '').replace(/"/g, '&quot;');
-    const chk = v => v ? 'checked' : '';
     const dis = isRunning ? 'disabled' : '';
+
+    const renderInheritToggle = (id, label, flag, flagName) => {
+        const val = flags[flagName];
+        const active = v => (val === v || (val === undefined && v === null)) ? 'active' : '';
+
+        return `
+            <div class="ps-toggle">
+                <div class="ps-toggle-group">
+                    <span class="ps-toggle-label">${label}</span>
+                    <code class="ps-flag">${flag}</code>
+                </div>
+                <div class="inheritance-control" data-id="${id}">
+                    <button class="inheritance-btn ${active(null)}" data-val="null" ${dis}>Padrão</button>
+                    <button class="inheritance-btn ${active(true)}" data-val="true" ${dis}>ON</button>
+                    <button class="inheritance-btn ${active(false)}" data-val="false" ${dis}>OFF</button>
+                </div>
+            </div>
+        `;
+    };
 
     overlay.innerHTML = `
         <div class="modal modal-profile-settings">
@@ -423,11 +441,7 @@ function openProfileSettingsModal(p, flags) {
                 <div class="ps-panel" id="ps-panel-flags">
                     <div class="ps-section">
                         <div class="ps-section-title">Sessao</div>
-                        <label class="ps-toggle">
-                            <input type="checkbox" id="f-restore" ${chk(flags.restore_last_session)}>
-                            <span class="ps-toggle-label">Restaurar ultima sessao</span>
-                            <code class="ps-flag">--restore-last-session</code>
-                        </label>
+                        ${renderInheritToggle('f-restore', 'Restaurar ultima sessao', '--restore-last-session', 'restore_last_session')}
                     </div>
 
                     <div class="ps-section">
@@ -478,36 +492,12 @@ function openProfileSettingsModal(p, flags) {
 
                     <div class="ps-section">
                         <div class="ps-section-title">Performance</div>
-                        <label class="ps-toggle">
-                            <input type="checkbox" id="f-bgnet" ${chk(flags.disable_background_networking)}>
-                            <span class="ps-toggle-label">Desativar rede em background</span>
-                            <code class="ps-flag">--disable-background-networking</code>
-                        </label>
-                        <label class="ps-toggle">
-                            <input type="checkbox" id="f-bgtimer" ${chk(flags.disable_background_timer_throttling)}>
-                            <span class="ps-toggle-label">Desativar throttling de timers</span>
-                            <code class="ps-flag">--disable-background-timer-throttling</code>
-                        </label>
-                        <label class="ps-toggle">
-                            <input type="checkbox" id="f-renderbg" ${chk(flags.disable_renderer_backgrounding)}>
-                            <span class="ps-toggle-label">Desativar backgrounding do renderer</span>
-                            <code class="ps-flag">--disable-renderer-backgrounding</code>
-                        </label>
-                        <label class="ps-toggle">
-                            <input type="checkbox" id="f-translate" ${chk(flags.disable_features_translate_ui)}>
-                            <span class="ps-toggle-label">Desativar UI de traducao</span>
-                            <code class="ps-flag">--disable-features=TranslateUI</code>
-                        </label>
-                        <label class="ps-toggle">
-                            <input type="checkbox" id="f-ext" ${chk(flags.disable_extensions)}>
-                            <span class="ps-toggle-label">Desativar extensoes</span>
-                            <code class="ps-flag">--disable-extensions</code>
-                        </label>
-                        <label class="ps-toggle">
-                            <input type="checkbox" id="f-sync" ${chk(flags.disable_sync)}>
-                            <span class="ps-toggle-label">Desativar sincronizacao</span>
-                            <code class="ps-flag">--disable-sync</code>
-                        </label>
+                        ${renderInheritToggle('f-bgnet', 'Desativar rede em background', '--disable-background-networking', 'disable_background_networking')}
+                        ${renderInheritToggle('f-bgtimer', 'Desativar throttling de timers', '--disable-background-timer-throttling', 'disable_background_timer_throttling')}
+                        ${renderInheritToggle('f-renderbg', 'Desativar backgrounding do renderer', '--disable-renderer-backgrounding', 'disable_renderer_backgrounding')}
+                        ${renderInheritToggle('f-translate', 'Desativar UI de traducao', '--disable-features=TranslateUI', 'disable_features_translate_ui')}
+                        ${renderInheritToggle('f-ext', 'Desativar extensoes', '--disable-extensions', 'disable_extensions')}
+                        ${renderInheritToggle('f-sync', 'Desativar sincronizacao', '--disable-sync', 'disable_sync')}
                     </div>
 
                     <div class="ps-actions">
@@ -638,21 +628,39 @@ function openProfileSettingsModal(p, flags) {
         btn.onclick = () => switchTab(btn.dataset.tab);
     });
 
+    // Toggle button clicks
+    overlay.querySelectorAll('.inheritance-btn').forEach(btn => {
+        btn.onclick = () => {
+            if (isRunning) return;
+            const parent = btn.closest('.inheritance-control');
+            parent.querySelectorAll('.inheritance-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        };
+    });
+
     // Save flags
     overlay.querySelector('#ps-save').onclick = async () => {
+        const parseTri = id => {
+            const activeBtn = overlay.querySelector(`.inheritance-control[data-id="${id}"] .inheritance-btn.active`);
+            const v = activeBtn.dataset.val;
+            if (v === "true") return true;
+            if (v === "false") return false;
+            return null;
+        };
+
         const newFlags = {
-            restore_last_session:                overlay.querySelector('#f-restore').checked,
+            restore_last_session:                parseTri('f-restore'),
             user_agent:                          overlay.querySelector('#f-ua').value.trim(),
             lang:                                overlay.querySelector('#f-lang').value.trim(),
             window_size:                         overlay.querySelector('#f-winsize').value.trim(),
             proxy_server:                        overlay.querySelector('#f-proxy').value.trim(),
             proxy_bypass_list:                   overlay.querySelector('#f-bypass').value.trim(),
-            disable_background_networking:       overlay.querySelector('#f-bgnet').checked,
-            disable_background_timer_throttling: overlay.querySelector('#f-bgtimer').checked,
-            disable_renderer_backgrounding:      overlay.querySelector('#f-renderbg').checked,
-            disable_features_translate_ui:       overlay.querySelector('#f-translate').checked,
-            disable_extensions:                  overlay.querySelector('#f-ext').checked,
-            disable_sync:                        overlay.querySelector('#f-sync').checked,
+            disable_background_networking:       parseTri('f-bgnet'),
+            disable_background_timer_throttling: parseTri('f-bgtimer'),
+            disable_renderer_backgrounding:      parseTri('f-renderbg'),
+            disable_features_translate_ui:       parseTri('f-translate'),
+            disable_extensions:                  parseTri('f-ext'),
+            disable_sync:                        parseTri('f-sync'),
         };
         const newGroupId = overlay.querySelector('#f-group').value;
         try {
@@ -721,6 +729,9 @@ async function handleSettings() {
            </div>`
         : `<div class="settings-notice">Nenhum navegador Chromium detectado automaticamente. Informe o caminho abaixo.</div>`;
 
+    const chk = v => v ? 'checked' : '';
+    const global = config.global_flags || {};
+
     overlay.innerHTML = `
         <div class="modal modal-settings">
             <h2>Configuracoes Globais</h2>
@@ -731,6 +742,41 @@ async function handleSettings() {
                     <input type="checkbox" id="set-show-unassigned" ${config.show_unassigned_tab ? 'checked' : ''}>
                     <span class="ps-toggle-label">Mostrar aba "Sem Grupo"</span>
                 </label>
+            </div>
+
+            <div class="ps-section">
+                <div class="ps-section-title">Padroes Globais (Defaults)</div>
+                <div class="settings-grid">
+                    <label class="ps-toggle">
+                        <input type="checkbox" id="g-restore" ${chk(global.restore_last_session)}>
+                        <span class="ps-toggle-label">Restaurar ultima sessao</span>
+                    </label>
+                    <label class="ps-toggle">
+                        <input type="checkbox" id="g-bgnet" ${chk(global.disable_background_networking)}>
+                        <span class="ps-toggle-label">Desativar rede em background</span>
+                    </label>
+                    <label class="ps-toggle">
+                        <input type="checkbox" id="g-bgtimer" ${chk(global.disable_background_timer_throttling)}>
+                        <span class="ps-toggle-label">Desativar throttling de timers</span>
+                    </label>
+                    <label class="ps-toggle">
+                        <input type="checkbox" id="g-renderbg" ${chk(global.disable_renderer_backgrounding)}>
+                        <span class="ps-toggle-label">Desativar backgrounding do renderer</span>
+                    </label>
+                    <label class="ps-toggle">
+                        <input type="checkbox" id="g-translate" ${chk(global.disable_features_translate_ui)}>
+                        <span class="ps-toggle-label">Desativar UI de traducao</span>
+                    </label>
+                    <label class="ps-toggle">
+                        <input type="checkbox" id="g-ext" ${chk(global.disable_extensions)}>
+                        <span class="ps-toggle-label">Desativar extensoes</span>
+                    </label>
+                    <label class="ps-toggle">
+                        <input type="checkbox" id="g-sync" ${chk(global.disable_sync)}>
+                        <span class="ps-toggle-label">Desativar sincronizacao</span>
+                    </label>
+                </div>
+                <p class="ps-subtitle" style="margin-top: 8px;">* Estes valores serao usados por perfis que estiverem configurados como "Padrao Global".</p>
             </div>
 
             <div class="settings-divider"></div>
@@ -779,11 +825,19 @@ async function handleSettings() {
             showToast('Erro: ' + err, 'error');
         }
     };
-
     overlay.querySelector('#modal-save-config').onclick = async () => {
         const newConfig = {
             ...config,
             show_unassigned_tab: document.getElementById('set-show-unassigned').checked,
+            global_flags: {
+                restore_last_session:                document.getElementById('g-restore').checked,
+                disable_background_networking:       document.getElementById('g-bgnet').checked,
+                disable_background_timer_throttling: document.getElementById('g-bgtimer').checked,
+                disable_renderer_backgrounding:      document.getElementById('g-renderbg').checked,
+                disable_features_translate_ui:       document.getElementById('g-translate').checked,
+                disable_extensions:                  document.getElementById('g-ext').checked,
+                disable_sync:                        document.getElementById('g-sync').checked,
+            }
         };
         try {
             await UpdateConfig(newConfig);
