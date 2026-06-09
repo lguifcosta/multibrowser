@@ -93,6 +93,8 @@ export NO_STRIP=1
 # Step 2: Deploy dependencies of WebKit helper binaries too
 for proc in AppDir/usr/lib/webkit2gtk-4.1/*; do
     if [ -f "$proc" ] && [ -x "$proc" ]; then
+        # Skip injected-bundle dir as linuxdeploy tries to patch rpath on .so files and fails
+        if [[ "$proc" == *"injected-bundle"* ]]; then continue; fi
         ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable "$proc" 2>/dev/null || true
     fi
 done
