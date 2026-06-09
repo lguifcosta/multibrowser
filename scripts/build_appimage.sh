@@ -59,9 +59,13 @@ if [ -n "$WEBKIT_DIR" ]; then
     fi
 
     mkdir -p AppDir/usr/lib/webkit2gtk-4.1
+    # Also create the multiarch-style path just in case the library has it hardcoded
+    mkdir -p AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1
+
     for proc in WebKitNetworkProcess WebKitWebProcess WebKitGPUProcess MiniBrowser; do
         if [ -f "$WEBKIT_DIR/$proc" ]; then
             cp "$WEBKIT_DIR/$proc" AppDir/usr/lib/webkit2gtk-4.1/
+            cp "$WEBKIT_DIR/$proc" AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/
             echo "  + $proc"
         fi
     done
@@ -110,10 +114,19 @@ if [ -n "$APPIMAGE" ] && [ -n "$APPDIR" ]; then
 else
     HERE="$(cd "$(dirname "$0")" && pwd)"
 fi
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+
+# Ensure bundled libraries are preferred
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${HERE}/lib:${HERE}/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+
+# Force WebKit to use bundled helper processes
 export WEBKIT_EXEC_PATH="${HERE}/usr/lib/webkit2gtk-4.1"
+export WEBKIT_PROCESS_PATH="${HERE}/usr/lib/webkit2gtk-4.1"
 export WEBKIT_INJECTED_BUNDLE_PATH="${HERE}/usr/lib/webkit2gtk-4.1/injected-bundle"
+
+# GIO and other essential paths
 export GIO_MODULE_DIR="${HERE}/usr/lib/gio/modules"
+export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
 # Disable DMA-BUF renderer — avoids black screen / rendering failures on
 # Ubuntu 22.04 / ZorinOS and systems with older graphics stacks.
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
