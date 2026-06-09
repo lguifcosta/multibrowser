@@ -64,6 +64,16 @@ if [ -n "$WEBKIT_DIR" ]; then
     fi
 fi
 
+# WebKit helper path is hardcoded in libwebkit at build time and ignores
+# WEBKIT_EXEC_PATH in production builds, so the bundled helpers are never used
+# on other distros. Compile an LD_PRELOAD shim that rewrites the spawn path.
+# WEBKIT_SYS_PREFIX is the build-host path baked into libwebkit ($WEBKIT_DIR).
+WEBKIT_SYS_PREFIX="${WEBKIT_DIR:-/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1}/"
+if command -v gcc >/dev/null 2>&1 && [ -f scripts/webkit_exec_fix.c ]; then
+    echo "Compiling WebKit exec-path shim (sys prefix: $WEBKIT_SYS_PREFIX)"
+    gcc -shared -fPIC -O2 -o AppDir/usr/lib/webkit_exec_fix.so scripts/webkit_exec_fix.c -ldl
+fi
+
 # Bundle GTK runtime data (NOT traced by linuxdeploy: loaded at runtime).
 # Missing these is the main cause of crashes on systems without GTK installed.
 LIB_PREFIXES=(
@@ -156,10 +166,14 @@ mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps/
 cp multibrowser.png AppDir/usr/share/icons/hicolor/512x512/apps/multibrowser.png
 
 # Step 4: Finalize AppRun with aggressive env vars
+# Prologue carries the build-host webkit prefix baked into libwebkit.
 rm -f AppDir/AppRun
-cat > AppDir/AppRun <<'EOF'
-#!/bin/bash
-HERE="$(dirname "$(readlink -f "${0}")")"
+{
+    echo '#!/bin/bash'
+    echo 'HERE="$(dirname "$(readlink -f "${0}")")"'
+    echo "export MB_WEBKIT_SYS=\"${WEBKIT_SYS_PREFIX}\""
+} > AppDir/AppRun
+cat >> AppDir/AppRun <<'EOF'
 
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${HERE}/lib:${HERE}/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
@@ -167,6 +181,13 @@ export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${HERE}
 export WEBKIT_EXEC_PATH="${HERE}/usr/lib/webkit2gtk-4.1"
 export WEBKIT_PROCESS_PATH="${HERE}/usr/lib/webkit2gtk-4.1"
 export WEBKIT_INJECTED_BUNDLE_PATH="${HERE}/usr/lib/webkit2gtk-4.1/injected-bundle"
+
+# libwebkit hardcodes the helper path and ignores WEBKIT_EXEC_PATH in production
+# builds; the preload shim rewrites the spawn path to the bundled helpers.
+export MB_WEBKIT_DIR="${HERE}/usr/lib/webkit2gtk-4.1"
+if [ -f "${HERE}/usr/lib/webkit_exec_fix.so" ]; then
+    export LD_PRELOAD="${HERE}/usr/lib/webkit_exec_fix.so${LD_PRELOAD:+:${LD_PRELOAD}}"
+fi
 
 # GLib/GTK fixes
 export GIO_MODULE_DIR="${HERE}/usr/lib/gio/modules"

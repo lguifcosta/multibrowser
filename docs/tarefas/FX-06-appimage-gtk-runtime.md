@@ -36,11 +36,26 @@ O Wails só aplica o ícone da janela quando `options.App.Linux.Icon != nil`
       pixbuf empacotados acima (caso contrário falha silenciosamente em distros
       com loaders externos, ex.: Ubuntu).
 
-## Causa raiz dos sintomas locais (NÃO é defeito do artefato)
+## WebKit helper path hardcoded (defeito real do build de release)
+O build de release roda no Ubuntu. O `libwebkit2gtk-4.1` do Ubuntu **embute o
+caminho absoluto** dos processos auxiliares (`/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/`)
+em tempo de compilação e **ignora `WEBKIT_EXEC_PATH`** em builds de produção
+(string ausente na lib; sem resolução relativa via dladdr). Em qualquer distro
+não-Debian esse caminho não existe → `Unable to spawn WebKitNetworkProcess` e
+abort. Os helpers empacotados nunca eram usados fora do Ubuntu.
+
+- [x] `scripts/webkit_exec_fix.c`: shim `LD_PRELOAD` que intercepta
+      `posix_spawn`/`execve`/`execv` e reescreve o prefixo hardcoded
+      (`MB_WEBKIT_SYS`) para o dir empacotado (`MB_WEBKIT_DIR`).
+- [x] `build_appimage.sh` compila o shim e o AppRun o injeta via `LD_PRELOAD`,
+      baqueando `MB_WEBKIT_SYS` = caminho do webkit no host de build.
+- [x] Validado: AppImage do release (Ubuntu) que crashava na Manjaro passa a
+      iniciar com o shim ativo.
+
+## Sintomas locais que NÃO são defeito do artefato
 SIGSEGV em `gtk_init` ao rodar e "sumiço" do arquivo após executar são causados
 pelo **AppImageLauncher** (binfmt) + FUSE nesta máquina (kernel 6.18). Provado:
-`APPIMAGE_EXTRACT_AND_RUN=1` e o `AppRun` extraído rodam sem erros. Não requer
-mudança no artefato.
+`APPIMAGE_EXTRACT_AND_RUN=1` e o `AppRun` extraído rodam sem erros.
 
 ## Critérios de Aceite
 - [x] AppImage extrai e contém `gschemas.compiled` e `gio/modules` populados.
