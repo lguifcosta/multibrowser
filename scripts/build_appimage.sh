@@ -70,34 +70,34 @@ if [ ! -f "linuxdeploy-x86_64.AppImage" ]; then
     chmod +x linuxdeploy-x86_64.AppImage
 fi
 
-if [ ! -f "linuxdeploy-plugin-gtk-x86_64.AppImage" ]; then
-    echo "Downloading linuxdeploy-plugin-gtk..."
-    wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
-    chmod +x linuxdeploy-plugin-gtk-x86_64.AppImage
-fi
-
-# Step 1: Run linuxdeploy with GTK plugin
+# Step 1: Run linuxdeploy
 export APPIMAGE_EXTRACT_AND_RUN=1
 export NO_STRIP=1
-export DEPLOY_GTK_VERSION=3
 ./linuxdeploy-x86_64.AppImage \
     --appdir AppDir \
     --executable "$BINARY_SOURCE" \
     --desktop-file multibrowser.desktop \
-    --icon-file multibrowser.png \
-    --plugin gtk
+    --icon-file multibrowser.png
 
-# Step 2: Ensure Icon is everywhere it needs to be
+# Step 2: Deploy dependencies of WebKit helper binaries too
+for proc in AppDir/usr/lib/webkit2gtk-4.1/*; do
+    if [ -f "$proc" ] && [ -x "$proc" ]; then
+        if [[ "$proc" == *"injected-bundle"* ]]; then continue; fi
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable "$proc" 2>/dev/null || true
+    fi
+done
+for proc in AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/*; do
+    if [ -f "$proc" ] && [ -x "$proc" ]; then
+        if [[ "$proc" == *"injected-bundle"* ]]; then continue; fi
+        ./linuxdeploy-x86_64.AppImage --appdir AppDir --executable "$proc" 2>/dev/null || true
+    fi
+done
+
+# Step 3: Ensure Icon is everywhere it needs to be
 cp multibrowser.png AppDir/.DirIcon
 cp multibrowser.png AppDir/multibrowser.png
 mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps/
 cp multibrowser.png AppDir/usr/share/icons/hicolor/512x512/apps/multibrowser.png
-
-# Step 3: Symlink trick for WebKitGTK multiarch paths
-# Some versions of WebKitGTK have hardcoded /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1
-# When running as AppImage, it should look relative to the AppDir
-mkdir -p AppDir/usr/lib/x86_64-linux-gnu
-ln -sf ../webkit2gtk-4.1 AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1
 
 # Step 4: Finalize AppRun with aggressive env vars
 rm -f AppDir/AppRun
