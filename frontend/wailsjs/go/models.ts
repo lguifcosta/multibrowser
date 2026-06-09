@@ -1,3 +1,26 @@
+export namespace config {
+	
+	export class Config {
+	    browser_path: string;
+	    browser_name: string;
+	    show_unassigned_tab: boolean;
+	    default_tab_id: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Config(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.browser_path = source["browser_path"];
+	        this.browser_name = source["browser_name"];
+	        this.show_unassigned_tab = source["show_unassigned_tab"];
+	        this.default_tab_id = source["default_tab_id"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class ProfileInfo {
@@ -60,6 +83,41 @@ export namespace process {
 
 export namespace profile {
 	
+	export class Group {
+	    id: string;
+	    name: string;
+	    // Go type: time
+	    created_at: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Group(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.created_at = this.convertValues(source["created_at"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ProfileFlags {
 	    restore_last_session: boolean;
 	    user_agent: string;
@@ -97,6 +155,7 @@ export namespace profile {
 	export class Profile {
 	    id: string;
 	    name: string;
+	    group_id: string;
 	    // Go type: time
 	    created_at: any;
 	    // Go type: time
@@ -112,6 +171,7 @@ export namespace profile {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.group_id = source["group_id"];
 	        this.created_at = this.convertValues(source["created_at"], null);
 	        this.last_used = this.convertValues(source["last_used"], null);
 	        this.status = source["status"];

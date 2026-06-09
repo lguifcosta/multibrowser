@@ -79,6 +79,30 @@ func (a *App) ListProfiles() ([]profile.Profile, error) {
 	return a.profileManager.List()
 }
 
+func (a *App) CreateGroup(name string) (*profile.Group, error) {
+	return a.profileManager.CreateGroup(name)
+}
+
+func (a *App) ListGroups() ([]profile.Group, error) {
+	return a.profileManager.ListGroups()
+}
+
+func (a *App) RenameGroup(id, newName string) error {
+	return a.profileManager.RenameGroup(id, newName)
+}
+
+func (a *App) DeleteGroup(id string) error {
+	return a.profileManager.DeleteGroup(id)
+}
+
+func (a *App) ReorderGroups(ids []string) error {
+	return a.profileManager.ReorderGroups(ids)
+}
+
+func (a *App) AssignProfileToGroup(profileID, groupID string) error {
+	return a.profileManager.AssignToGroup(profileID, groupID)
+}
+
 func (a *App) DeleteProfile(id string) error {
 	return a.profileManager.Delete(id)
 }
@@ -177,6 +201,14 @@ func (a *App) ImportBackup(backupPath, newName, password string) (*profile.Profi
 
 func (a *App) CleanCache(profileID string) (int64, error) {
 	return a.cacheCleaner.Clean(profileID)
+}
+
+func (a *App) GetConfig() config.Config {
+	return a.configManager.Get()
+}
+
+func (a *App) UpdateConfig(cfg config.Config) error {
+	return a.configManager.UpdateConfig(cfg)
 }
 
 // Helpers

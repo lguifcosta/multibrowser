@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=MultiBrowser
+Exec=multibrowser
+Icon=multibrowser
+Type=Application
+Categories=Utility;
+Terminal=false

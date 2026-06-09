@@ -33,9 +33,16 @@ type ProfileFlags struct {
 	DisableSync                      bool   `json:"disable_sync"`
 }
 
+type Group struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Profile struct {
 	ID        string       `json:"id"`
 	Name      string       `json:"name"`
+	GroupID   string       `json:"group_id"`
 	CreatedAt time.Time    `json:"created_at"`
 	LastUsed  time.Time    `json:"last_used"`
 	Status    Status       `json:"status"`
@@ -44,6 +51,7 @@ type Profile struct {
 
 type Metadata struct {
 	Profiles []Profile `json:"profiles"`
+	Groups   []Group   `json:"groups"`
 }
 
 type Manager struct {
@@ -69,7 +77,7 @@ func NewManager(baseDir string) (*Manager, error) {
 	}
 
 	if _, err := os.Stat(m.metadataPath); os.IsNotExist(err) {
-		if err := m.saveMetadata(&Metadata{Profiles: []Profile{}}); err != nil {
+		if err := m.saveMetadata(&Metadata{Profiles: []Profile{}, Groups: []Group{}}); err != nil {
 			return nil, err
 		}
 	}
@@ -256,6 +264,7 @@ func (m *Manager) Clone(id, newName string) (*Profile, error) {
 	newProfile := Profile{
 		ID:        uuid.New().String(),
 		Name:      newName,
+		GroupID:   source.GroupID,
 		CreatedAt: time.Now(),
 		LastUsed:  time.Now(),
 		Status:    StatusStopped,
@@ -275,6 +284,158 @@ func (m *Manager) Clone(id, newName string) (*Profile, error) {
 	}
 
 	return &newProfile, nil
+}
+
+func (m *Manager) CreateGroup(name string) (*Group, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, err := m.loadMetadata()
+	if err != nil {
+		return nil, err
+	}
+
+	group := Group{
+		ID:        uuid.New().String(),
+		Name:      name,
+		CreatedAt: time.Now(),
+	}
+
+	meta.Groups = append(meta.Groups, group)
+	if err := m.saveMetadata(meta); err != nil {
+		return nil, err
+	}
+
+	return &group, nil
+}
+
+func (m *Manager) ListGroups() ([]Group, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, err := m.loadMetadata()
+	if err != nil {
+		return nil, err
+	}
+
+	return meta.Groups, nil
+}
+
+func (m *Manager) RenameGroup(id, newName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, err := m.loadMetadata()
+	if err != nil {
+		return err
+	}
+
+	for i, g := range meta.Groups {
+		if g.ID == id {
+			meta.Groups[i].Name = newName
+			return m.saveMetadata(meta)
+		}
+	}
+
+	return fmt.Errorf("group not found: %s", id)
+}
+
+func (m *Manager) DeleteGroup(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, err := m.loadMetadata()
+	if err != nil {
+		return err
+	}
+
+	idx := -1
+	for i, g := range meta.Groups {
+		if g.ID == id {
+			idx = i
+			break
+		}
+	}
+
+	if idx == -1 {
+		return fmt.Errorf("group not found: %s", id)
+	}
+
+	// Remove o grupo
+	meta.Groups = append(meta.Groups[:idx], meta.Groups[idx+1:]...)
+
+	// Limpa o GroupID dos perfis que estavam nesse grupo
+	for i, p := range meta.Profiles {
+		if p.GroupID == id {
+			meta.Profiles[i].GroupID = ""
+		}
+	}
+
+	return m.saveMetadata(meta)
+}
+
+func (m *Manager) ReorderGroups(ids []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, err := m.loadMetadata()
+	if err != nil {
+		return err
+	}
+
+	groupMap := make(map[string]Group)
+	for _, g := range meta.Groups {
+		groupMap[g.ID] = g
+	}
+
+	newGroups := make([]Group, 0, len(ids))
+	for _, id := range ids {
+		if g, ok := groupMap[id]; ok {
+			newGroups = append(newGroups, g)
+			delete(groupMap, id)
+		}
+	}
+
+	// Adiciona quaisquer grupos que não foram incluídos na lista (segurança)
+	for _, g := range groupMap {
+		newGroups = append(newGroups, g)
+	}
+
+	meta.Groups = newGroups
+	return m.saveMetadata(meta)
+}
+
+func (m *Manager) AssignToGroup(profileID, groupID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	meta, err := m.loadMetadata()
+	if err != nil {
+		return err
+	}
+
+	// Verifica se o grupo existe (se não for vazio)
+	if groupID != "" {
+		found := false
+		for _, g := range meta.Groups {
+			if g.ID == groupID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("group not found: %s", groupID)
+		}
+	}
+
+	for i, p := range meta.Profiles {
+		if p.ID == profileID {
+			meta.Profiles[i].GroupID = groupID
+			return m.saveMetadata(meta)
+		}
+	}
+
+	return fmt.Errorf("profile not found: %s", profileID)
 }
 
 func (m *Manager) UpdateFlags(id string, flags ProfileFlags) error {

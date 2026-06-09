@@ -8,10 +8,17 @@ import {
     GetBrowserPath, GetBrowserName, HasBrowser, DetectBrowsers, SetBrowser, SetCustomBrowserPath,
     GetProfileFlags, UpdateProfileFlags,
     GetProfileTelemetry, GetProfileInfo,
+    CreateGroup, ListGroups, DeleteGroup, RenameGroup, AssignProfileToGroup, ReorderGroups,
+    GetConfig, UpdateConfig,
 } from '../wailsjs/go/main/App';
 
 let profiles = [];
+let groups = [];
+let appConfig = {};
+let activeTab = null;
 let pollInterval = null;
+let draggedTabId = null;
+let isDragging = false;
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
 
@@ -121,11 +128,112 @@ function showAboutModal() {
 // ─── Profile list ─────────────────────────────────────────────────────────────
 
 async function refreshProfiles() {
+    if (isDragging) return;
     try {
-        profiles = await ListProfiles();
+        const [p, g, c] = await Promise.all([ListProfiles(), ListGroups(), GetConfig()]);
+        profiles = p || [];
+        groups = g || [];
+        appConfig = c || {};
+
+        if (activeTab === null) {
+            activeTab = appConfig.default_tab_id || 'all';
+        }
+
         render();
     } catch (err) {
-        showToast('Erro ao carregar perfis: ' + err, 'error');
+        showToast('Erro ao carregar dados: ' + err, 'error');
+    }
+}
+
+// ─── Group actions ────────────────────────────────────────────────────────────
+
+async function handleSetDefaultTab(id) {
+    try {
+        const newConfig = { ...appConfig, default_tab_id: id };
+        await UpdateConfig(newConfig);
+        appConfig = newConfig;
+        showToast('Aba padrao configurada');
+        render();
+    } catch (err) {
+        showToast('Erro: ' + err, 'error');
+    }
+}
+
+async function handleReorderGroups(ids) {
+    try {
+        await ReorderGroups(ids);
+        groups = groups.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+        render();
+    } catch (err) {
+        showToast('Erro ao reordenar: ' + err, 'error');
+    }
+}
+
+// ─── Group actions ────────────────────────────────────────────────────────────
+
+async function handleCreateGroup() {
+    showModal('Nova Aba (Grupo)', [
+        {name: 'name', label: 'Nome da aba', placeholder: 'Trabalho, Pessoal, etc.'}
+    ], async (values) => {
+        if (!values.name.trim()) return;
+        try {
+            await CreateGroup(values.name.trim());
+            showToast('Grupo criado');
+            refreshProfiles();
+        } catch (err) {
+            showToast('Erro: ' + err, 'error');
+        }
+    });
+}
+
+async function handleRenameGroup(id, currentName) {
+    showModal('Renomear Aba', [
+        {name: 'name', label: 'Novo nome', value: currentName}
+    ], async (values) => {
+        if (!values.name.trim()) return;
+        try {
+            await RenameGroup(id, values.name.trim());
+            showToast('Grupo renomeado');
+            refreshProfiles();
+        } catch (err) {
+            showToast('Erro: ' + err, 'error');
+        }
+    });
+}
+
+async function handleDeleteGroup(id, name) {
+    if (!confirm(`Deletar aba "${name}"? Os perfis voltarao para "Sem Grupo".`)) return;
+    try {
+        await DeleteGroup(id);
+        if (activeTab === id) activeTab = 'all';
+        showToast('Grupo deletado');
+        refreshProfiles();
+    } catch (err) {
+        showToast('Erro: ' + err, 'error');
+    }
+}
+
+async function handleAssignGroup(profileId, groupId) {
+    try {
+        await AssignProfileToGroup(profileId, groupId);
+        showToast('Perfil movido');
+        refreshProfiles();
+    } catch (err) {
+        showToast('Erro: ' + err, 'error');
+    }
+}
+
+async function handleBatchAssign(groupId, profileIds, removeIds) {
+    try {
+        const promises = [
+            ...profileIds.map(id => AssignProfileToGroup(id, groupId)),
+            ...removeIds.map(id => AssignProfileToGroup(id, ""))
+        ];
+        await Promise.all(promises);
+        showToast(`${profileIds.length + removeIds.length} perfis atualizados`);
+        refreshProfiles();
+    } catch (err) {
+        showToast('Erro no processamento em lote: ' + err, 'error');
     }
 }
 
@@ -331,6 +439,19 @@ function openProfileSettingsModal(p, flags) {
                     </div>
 
                     <div class="ps-section">
+                        <div class="ps-section-title">Organização</div>
+                        <div class="ps-field">
+                            <label>Aba / Grupo</label>
+                            <div class="ps-select-wrapper">
+                                <select id="f-group" class="ps-select">
+                                    <option value="">Sem Grupo</option>
+                                    ${groups.map(g => `<option value="${g.id}" ${p.group_id === g.id ? 'selected' : ''}>${g.name}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ps-section">
                         <div class="ps-section-title">Performance</div>
                         <label class="ps-toggle">
                             <input type="checkbox" id="f-bgnet" ${chk(flags.disable_background_networking)}>
@@ -508,10 +629,15 @@ function openProfileSettingsModal(p, flags) {
             disable_extensions:                  overlay.querySelector('#f-ext').checked,
             disable_sync:                        overlay.querySelector('#f-sync').checked,
         };
+        const newGroupId = overlay.querySelector('#f-group').value;
         try {
-            await UpdateProfileFlags(p.id, newFlags);
+            await Promise.all([
+                UpdateProfileFlags(p.id, newFlags),
+                AssignProfileToGroup(p.id, newGroupId)
+            ]);
             showToast('Configuracoes salvas');
             close();
+            refreshProfiles();
         } catch (err) {
             showToast('Erro: ' + err, 'error');
         }
@@ -535,6 +661,7 @@ async function handleSettings() {
     let browsers = [];
     try { browsers = await DetectBrowsers(); } catch (e) {}
     const currentPath = await GetBrowserPath();
+    const config = await GetConfig();
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -556,16 +683,31 @@ async function handleSettings() {
 
     overlay.innerHTML = `
         <div class="modal modal-settings">
-            <h2>Selecionar Navegador</h2>
-            ${browserListHtml}
-            <div class="settings-divider"></div>
-            <div class="form-group">
-                <label for="custom-path">Caminho customizado</label>
-                <input type="text" id="custom-path" value="" placeholder="/usr/bin/meu-navegador">
+            <h2>Configuracoes Globais</h2>
+            
+            <div class="ps-section">
+                <div class="ps-section-title">Interface</div>
+                <label class="ps-toggle">
+                    <input type="checkbox" id="set-show-unassigned" ${config.show_unassigned_tab ? 'checked' : ''}>
+                    <span class="ps-toggle-label">Mostrar aba "Sem Grupo"</span>
+                </label>
             </div>
-            <button class="btn btn-secondary btn-block" id="btn-apply-custom">Usar caminho customizado</button>
+
+            <div class="settings-divider"></div>
+
+            <div class="ps-section">
+                <div class="ps-section-title">Navegador Padrao</div>
+                ${browserListHtml}
+                <div class="form-group" style="margin-top: 12px;">
+                    <label for="custom-path">Caminho customizado</label>
+                    <input type="text" id="custom-path" value="" placeholder="/usr/bin/meu-navegador">
+                </div>
+                <button class="btn btn-secondary btn-block" id="btn-apply-custom">Usar caminho customizado</button>
+            </div>
+
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="modal-cancel">Fechar</button>
+                <button class="btn btn-primary" id="modal-save-config">Salvar Configuracoes</button>
             </div>
         </div>
     `;
@@ -577,7 +719,8 @@ async function handleSettings() {
             try {
                 await SetBrowser(btn.dataset.name, btn.dataset.path);
                 showToast(`Navegador alterado para ${btn.dataset.name}`);
-                overlay.remove();
+                overlay.querySelectorAll('.browser-option').forEach(b => b.classList.remove('browser-selected'));
+                btn.classList.add('browser-selected');
                 updateHeader();
             } catch (err) {
                 showToast('Erro: ' + err, 'error');
@@ -591,8 +734,22 @@ async function handleSettings() {
         try {
             await SetCustomBrowserPath(path);
             showToast('Navegador customizado configurado');
-            overlay.remove();
             updateHeader();
+        } catch (err) {
+            showToast('Erro: ' + err, 'error');
+        }
+    };
+
+    overlay.querySelector('#modal-save-config').onclick = async () => {
+        const newConfig = {
+            ...config,
+            show_unassigned_tab: document.getElementById('set-show-unassigned').checked,
+        };
+        try {
+            await UpdateConfig(newConfig);
+            showToast('Configuracoes salvas');
+            overlay.remove();
+            refreshProfiles();
         } catch (err) {
             showToast('Erro: ' + err, 'error');
         }
@@ -663,21 +820,300 @@ function renderProfileCard(p) {
     `;
 }
 
-function render() {
-    const container = document.getElementById('profiles-list');
+function renderTabs() {
+    const container = document.getElementById('tabs-list');
+    if (!container) return '';
 
-    if (!profiles || profiles.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <p>Nenhum perfil encontrado</p>
-                <button class="btn btn-primary" id="empty-create">Criar Perfil</button>
+    const isDefault = id => appConfig.default_tab_id === id;
+
+    let html = `
+        <div class="tab-item ${activeTab === 'all' ? 'active' : ''} ${isDefault('all') ? 'tab-default' : ''}" 
+             data-tab="all">
+            Todos
+            <button class="tab-options-btn" data-group-action="options" data-id="all" data-name="Todos">⋮</button>
+        </div>
+    `;
+
+    if (appConfig.show_unassigned_tab) {
+        html += `
+            <div class="tab-item ${activeTab === 'unassigned' ? 'active' : ''} ${isDefault('unassigned') ? 'tab-default' : ''}" 
+                 data-tab="unassigned">
+                Sem Grupo
+                <button class="tab-options-btn" data-group-action="options" data-id="unassigned" data-name="Sem Grupo">⋮</button>
             </div>
         `;
-        document.getElementById('empty-create').onclick = handleCreate;
+    }
+
+    groups.forEach(g => {
+        html += `
+            <div class="tab-item ${activeTab === g.id ? 'active' : ''} ${isDefault(g.id) ? 'tab-default' : ''}" 
+                 data-tab="${g.id}" draggable="true">
+                ${g.name}
+                <button class="tab-options-btn" data-group-action="options" data-id="${g.id}" data-name="${g.name}">⋮</button>
+            </div>
+        `;
+    });
+
+    html += `<button class="tab-add" id="btn-add-group" title="Criar nova aba">+</button>`;
+    
+    container.innerHTML = html;
+
+    // Events attachment
+    container.querySelectorAll('.tab-item').forEach(el => {
+        const tabId = el.dataset.tab;
+
+        el.onclick = (e) => {
+            if (e.target.closest('[data-group-action]')) return;
+            activeTab = tabId;
+            render();
+        };
+
+        // Drag and drop logic
+        el.ondragstart = (e) => {
+            if (!el.getAttribute('draggable')) {
+                e.preventDefault();
+                return;
+            }
+            draggedTabId = tabId;
+            isDragging = true;
+            el.classList.add('tab-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', tabId); // Required by some browsers
+        };
+
+        el.ondragend = () => {
+            el.classList.remove('tab-dragging');
+            container.querySelectorAll('.tab-item').forEach(t => t.classList.remove('tab-drag-over'));
+            isDragging = false;
+            draggedTabId = null;
+        };
+
+        el.ondragover = (e) => {
+            e.preventDefault();
+            const isCustom = groups.some(g => g.id === tabId);
+            if (isDragging && draggedTabId !== tabId && isCustom) {
+                el.classList.add('tab-drag-over');
+            }
+            e.dataTransfer.dropEffect = 'move';
+        };
+
+        el.ondragleave = () => {
+            el.classList.remove('tab-drag-over');
+        };
+
+        el.ondrop = (e) => {
+            e.preventDefault();
+            const targetId = tabId;
+            const isCustomTarget = groups.some(g => g.id === targetId);
+            
+            if (draggedTabId && draggedTabId !== targetId && isCustomTarget) {
+                const ids = groups.map(g => g.id);
+                const fromIdx = ids.indexOf(draggedTabId);
+                const toIdx = ids.indexOf(targetId);
+                if (fromIdx !== -1 && toIdx !== -1) {
+                    ids.splice(toIdx, 0, ids.splice(fromIdx, 1)[0]);
+                    handleReorderGroups(ids);
+                }
+            }
+        };
+    });
+
+    const addBtn = container.querySelector('#btn-add-group');
+    if (addBtn) addBtn.onclick = handleCreateGroup;
+
+    container.querySelectorAll('[data-group-action="options"]').forEach(btn => {
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            const { id, name } = btn.dataset;
+            showTabMenu(e, id, name);
+        };
+    });
+}
+
+function showTabMenu(event, id, name) {
+    const existing = document.querySelector('.context-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    
+    const isSpecial = id === 'all' || id === 'unassigned';
+    const isDefault = appConfig.default_tab_id === id;
+
+    menu.innerHTML = `
+        ${!isSpecial ? `<button class="cmenu-item" id="cmenu-members">Gerenciar Membros</button>` : ''}
+        ${!isSpecial ? `<button class="cmenu-item" id="cmenu-rename">Renomear</button>` : ''}
+        <button class="cmenu-item ${isDefault ? 'disabled' : ''}" id="cmenu-default">
+            ${isDefault ? '✓ Aba Padrao' : 'Tornar Padrao'}
+        </button>
+        ${!isSpecial ? `<div class="cmenu-divider"></div>` : ''}
+        ${!isSpecial ? `<button class="cmenu-item cmenu-danger" id="cmenu-delete">Deletar</button>` : ''}
+    `;
+
+    document.body.appendChild(menu);
+    
+    // Position menu
+    const rect = event.target.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 5}px`;
+    menu.style.left = `${rect.left}px`;
+
+    // Click outside to close
+    const close = () => { menu.remove(); document.removeEventListener('click', close); };
+    setTimeout(() => document.addEventListener('click', close), 10);
+
+    // Handlers
+    if (!isSpecial) {
+        menu.querySelector('#cmenu-members').onclick = () => showGroupMembersModal(id, name);
+        menu.querySelector('#cmenu-rename').onclick = () => handleRenameGroup(id, name);
+        menu.querySelector('#cmenu-delete').onclick = () => handleDeleteGroup(id, name);
+    }
+    if (!isDefault) {
+        menu.querySelector('#cmenu-default').onclick = () => handleSetDefaultTab(id);
+    }
+}
+
+function showGroupMembersModal(groupId, groupName) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    
+    overlay.innerHTML = `
+        <div class="modal modal-members">
+            <div class="batch-header">
+                <h2>Membros da Aba: ${groupName}</h2>
+                <p class="ps-subtitle">Selecione os perfis que deseja incluir ou remover desta aba.</p>
+            </div>
+
+            <div class="batch-search-wrap">
+                <div class="batch-search-container">
+                    <span class="batch-search-icon">🔍</span>
+                    <input type="text" class="batch-search" id="batch-search-input" placeholder="Buscar perfis...">
+                </div>
+            </div>
+            
+            <div class="batch-list" id="batch-profile-list">
+                <!-- Perfis renderizados dinamicamente -->
+            </div>
+
+            <div class="batch-footer">
+                <div class="batch-stats">
+                    <span id="batch-selected-count">0</span> perfis selecionados
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" id="batch-cancel">Cancelar</button>
+                    <button class="btn btn-primary" id="batch-save">Salvar</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const listContainer = overlay.querySelector('#batch-profile-list');
+    const searchInput = overlay.querySelector('#batch-search-input');
+    const statsCount = overlay.querySelector('#batch-selected-count');
+
+    function updateStats() {
+        const count = overlay.querySelectorAll('.batch-checkbox:checked').length;
+        statsCount.textContent = count;
+    }
+
+    function renderBatchList(filter = '') {
+        const filtered = profiles.filter(p => p.name.toLowerCase().includes(filter.toLowerCase()));
+        
+        listContainer.innerHTML = filtered.map(p => {
+            const isMember = p.group_id === groupId;
+            const otherGroupName = p.group_id && !isMember ? (groups.find(g => g.id === p.group_id)?.name || 'Outro') : null;
+            let metaText = 'Sem grupo';
+            if (isMember) metaText = 'Já neste grupo';
+            else if (otherGroupName) metaText = `Atualmente em: ${otherGroupName}`;
+
+            return `
+                <div class="batch-item ${isMember ? 'selected' : ''}" data-profile-id="${p.id}">
+                    <div class="batch-checkbox-wrap">
+                        <input type="checkbox" class="batch-checkbox" data-id="${p.id}" ${isMember ? 'checked' : ''}>
+                        <div class="batch-custom-check"></div>
+                    </div>
+                    <div class="batch-icon">👤</div>
+                    <div class="batch-info">
+                        <span class="batch-name">${p.name}</span>
+                        <span class="batch-meta">${metaText}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Re-attach item click events
+        listContainer.querySelectorAll('.batch-item').forEach(item => {
+            item.onclick = (e) => {
+                if (e.target.classList.contains('batch-checkbox')) return;
+                const cb = item.querySelector('.batch-checkbox');
+                cb.checked = !cb.checked;
+                item.classList.toggle('selected', cb.checked);
+                updateStats();
+            };
+            item.querySelector('.batch-checkbox').onclick = (e) => {
+                e.stopPropagation();
+                item.classList.toggle('selected', e.target.checked);
+                updateStats();
+            };
+        });
+    }
+
+    renderBatchList();
+    updateStats();
+
+    searchInput.oninput = (e) => renderBatchList(e.target.value);
+
+    overlay.querySelector('#batch-cancel').onclick = () => overlay.remove();
+    overlay.querySelector('#batch-save').onclick = async () => {
+        const selectedIds = [];
+        const removedIds = [];
+        
+        // Verificamos todos os perfis, não apenas os visíveis no filtro
+        // Para isso, precisamos olhar o estado atualizado no DOM ou manter um estado local
+        // Usaremos o DOM mas iterando sobre todos os perfis
+        overlay.querySelectorAll('.batch-checkbox').forEach(cb => {
+            const id = cb.dataset.id;
+            const profile = profiles.find(p => p.id === id);
+            if (cb.checked && profile.group_id !== groupId) {
+                selectedIds.push(id);
+            } else if (!cb.checked && profile.group_id === groupId) {
+                removedIds.push(id);
+            }
+        });
+
+        overlay.remove();
+        if (selectedIds.length > 0 || removedIds.length > 0) {
+            await handleBatchAssign(groupId, selectedIds, removedIds);
+        }
+    };
+}
+
+function render() {
+    renderTabs();
+
+    const container = document.getElementById('profiles-list');
+
+    let filteredProfiles = profiles;
+    if (activeTab === 'unassigned') {
+        filteredProfiles = profiles.filter(p => !p.group_id);
+    } else if (activeTab !== 'all') {
+        filteredProfiles = profiles.filter(p => p.group_id === activeTab);
+    }
+
+    if (!filteredProfiles || filteredProfiles.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <p>Nenhum perfil nesta categoria</p>
+                ${activeTab === 'all' ? `<button class="btn btn-primary" id="empty-create">Criar Perfil</button>` : ''}
+            </div>
+        `;
+        const btn = document.getElementById('empty-create');
+        if (btn) btn.onclick = handleCreate;
         return;
     }
 
-    container.innerHTML = profiles.map(renderProfileCard).join('');
+    container.innerHTML = filteredProfiles.map(renderProfileCard).join('');
 }
 
 // ─── Event delegation ─────────────────────────────────────────────────────────
@@ -715,7 +1151,7 @@ async function init() {
                         <span></span><span></span><span></span>
                     </button>
                     <nav class="hamburger-menu" id="hamburger-menu">
-                        <button class="hmenu-item" id="hmenu-browser">Selecionar navegador</button>
+                        <button class="hmenu-item" id="hmenu-browser">Configuracoes globais</button>
                         <button class="hmenu-item" id="hmenu-import">Importar backup</button>
                         <div class="hmenu-divider"></div>
                         <button class="hmenu-item" id="hmenu-about">Sobre</button>
@@ -730,6 +1166,7 @@ async function init() {
                 <button class="btn btn-primary" id="btn-create">+ Novo Perfil</button>
             </div>
         </header>
+        <div class="tabs-container" id="tabs-list"></div>
         <div class="profiles-container" id="profiles-list"></div>
     `;
 

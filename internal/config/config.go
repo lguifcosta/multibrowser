@@ -8,8 +8,10 @@ import (
 )
 
 type Config struct {
-	BrowserPath string `json:"browser_path"`
-	BrowserName string `json:"browser_name"`
+	BrowserPath       string `json:"browser_path"`
+	BrowserName       string `json:"browser_name"`
+	ShowUnassignedTab bool   `json:"show_unassigned_tab"`
+	DefaultTabID      string `json:"default_tab_id"`
 }
 
 type Manager struct {
@@ -50,6 +52,14 @@ func (m *Manager) SetBrowser(name, path string) error {
 
 	m.config.BrowserPath = path
 	m.config.BrowserName = name
+	return m.save()
+}
+
+func (m *Manager) UpdateConfig(cfg Config) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.config = cfg
 	return m.save()
 }
 
