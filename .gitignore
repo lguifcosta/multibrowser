@@ -34,3 +34,4 @@ node_modules/
 .vscode/
 *.swp
 *.swo
+linuxdeploy-plugin-gtk.sh

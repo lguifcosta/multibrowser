@@ -64,6 +64,62 @@ if [ -n "$WEBKIT_DIR" ]; then
     fi
 fi
 
+# Bundle GTK runtime data (NOT traced by linuxdeploy: loaded at runtime).
+# Missing these is the main cause of crashes on systems without GTK installed.
+LIB_PREFIXES=(
+    "/usr/lib/x86_64-linux-gnu"
+    "/usr/lib64"
+    "/usr/lib"
+)
+
+find_in_prefixes() {
+    # $1 = relative path under a lib prefix; prints first match
+    for p in "${LIB_PREFIXES[@]}"; do
+        if [ -e "$p/$1" ]; then echo "$p/$1"; return 0; fi
+    done
+    return 1
+}
+
+# 1) GSettings schemas (required: GTK aborts on g_settings_new if missing)
+if [ -f "/usr/share/glib-2.0/schemas/gschemas.compiled" ]; then
+    echo "Bundling GSettings schemas"
+    mkdir -p AppDir/usr/share/glib-2.0/schemas
+    cp /usr/share/glib-2.0/schemas/*.xml AppDir/usr/share/glib-2.0/schemas/ 2>/dev/null || true
+    cp /usr/share/glib-2.0/schemas/*.gschema.override AppDir/usr/share/glib-2.0/schemas/ 2>/dev/null || true
+    if command -v glib-compile-schemas >/dev/null 2>&1 && ls AppDir/usr/share/glib-2.0/schemas/*.xml >/dev/null 2>&1; then
+        glib-compile-schemas AppDir/usr/share/glib-2.0/schemas/ >/dev/null 2>&1 || \
+            cp /usr/share/glib-2.0/schemas/gschemas.compiled AppDir/usr/share/glib-2.0/schemas/
+    else
+        cp /usr/share/glib-2.0/schemas/gschemas.compiled AppDir/usr/share/glib-2.0/schemas/
+    fi
+fi
+
+# 2) GIO modules (TLS via glib-networking/gnutls -> HTTPS)
+if GIO_SRC=$(find_in_prefixes "gio/modules"); then
+    echo "Bundling GIO modules from: $GIO_SRC"
+    mkdir -p AppDir/usr/lib/gio/modules
+    cp "$GIO_SRC"/*.so AppDir/usr/lib/gio/modules/ 2>/dev/null || true
+    if command -v gio-querymodules >/dev/null 2>&1; then
+        gio-querymodules AppDir/usr/lib/gio/modules >/dev/null 2>&1 || true
+    fi
+fi
+
+# 3) gdk-pixbuf loaders (external on Debian/Ubuntu; built-in on Arch gdk-pixbuf>=2.44)
+if PIXBUF_BASE=$(find_in_prefixes "gdk-pixbuf-2.0/2.10.0/loaders"); then
+    if ls "$PIXBUF_BASE"/*.so >/dev/null 2>&1; then
+        echo "Bundling gdk-pixbuf loaders from: $PIXBUF_BASE"
+        mkdir -p AppDir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders
+        cp "$PIXBUF_BASE"/*.so AppDir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders/ 2>/dev/null || true
+        # query-loaders echoes the argument paths verbatim, so we feed absolute
+        # build paths; AppRun rewrites the known suffix to the relocated dir.
+        QUERY=$(command -v gdk-pixbuf-query-loaders-64 gdk-pixbuf-query-loaders 2>/dev/null | head -1)
+        if [ -n "$QUERY" ]; then
+            "$QUERY" "$PWD"/AppDir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.so \
+                > AppDir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache 2>/dev/null || true
+        fi
+    fi
+fi
+
 if [ ! -f "linuxdeploy-x86_64.AppImage" ]; then
     echo "Downloading linuxdeploy..."
     wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
@@ -116,6 +172,17 @@ export WEBKIT_INJECTED_BUNDLE_PATH="${HERE}/usr/lib/webkit2gtk-4.1/injected-bund
 export GIO_MODULE_DIR="${HERE}/usr/lib/gio/modules"
 export GSETTINGS_SCHEMA_DIR="${HERE}/usr/share/glib-2.0/schemas"
 export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+# gdk-pixbuf loaders: rewrite the build-time absolute paths in the cache to the
+# relocated loader dir, into a writable per-run cache file.
+PIXBUF_LOADERDIR="${HERE}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+if [ -f "${HERE}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache" ]; then
+    export GDK_PIXBUF_MODULEDIR="${PIXBUF_LOADERDIR}"
+    RUNTIME_CACHE="$(mktemp 2>/dev/null || echo /tmp/mb-pixbuf.cache)"
+    sed "s|\"[^\"]*/gdk-pixbuf-2.0/2.10.0/loaders/|\"${PIXBUF_LOADERDIR}/|g" \
+        "${HERE}/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache" > "${RUNTIME_CACHE}" 2>/dev/null \
+        && export GDK_PIXBUF_MODULE_FILE="${RUNTIME_CACHE}"
+fi
 
 # Graphics stability
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
